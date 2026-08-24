@@ -24,6 +24,7 @@ var TITLES = {
   "/monitor": "监测预警",
   "/live": "实时监测",
   "/search": "自由检索",
+  "/ai": "AI 研判",
   "/collect": "数据采集"
 };
 
@@ -557,6 +558,200 @@ function searchAll(kw) {
   });
 }
 
+/* ---------- 视图 8：AI 深度研判 ---------- */
+var AI_PROVIDERS = {
+  "deepseek": { label: "DeepSeek", base: "https://api.deepseek.com", model: "deepseek-chat" },
+  "qwen": { label: "通义千问", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+  "zhipu": { label: "智谱 GLM", base: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
+  "kimi": { label: "Kimi", base: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" }
+};
+
+function getAIConfig() {
+  try {
+    var s = localStorage.getItem("ai_config");
+    if (s) return JSON.parse(s);
+  } catch (e) {}
+  return { provider: "deepseek", base: "https://api.deepseek.com", model: "deepseek-chat", key: "" };
+}
+
+function saveAIConfig(cfg) {
+  try { localStorage.setItem("ai_config", JSON.stringify(cfg)); } catch (e) {}
+}
+
+function renderAI() {
+  var cfg = getAIConfig();
+  var provOpts = Object.keys(AI_PROVIDERS).map(function (k) {
+    return '<option value="' + k + '"' + (k === cfg.provider ? ' selected' : '') + '>' + AI_PROVIDERS[k].label + '</option>';
+  }).join("");
+
+  $view.innerHTML =
+    '<div class="section-title">AI 深度研判 · 作品舆情自动分析</div>' +
+    '<div class="card"><div style="font-size:13px;color:#5C5750;margin-bottom:10px"><b>工作原理：</b>输入作品名称 → 平台联网广域抓取相关新闻（Google News）→ 交给大模型结合智库研判框架 → 自动生成舆情研判与量化数据。</div>' +
+
+    '<div class="table-wrap"><table class="data" style="max-width:640px">' +
+    '<tr><td style="width:90px">大模型</td><td><select id="ai-provider" class="select">' + provOpts + '</select></td></tr>' +
+    '<tr><td>API Key</td><td><input id="ai-key" class="input" type="password" placeholder="粘贴你的 API Key" value="' + esc(cfg.key) + '" style="max-width:420px"></td></tr>' +
+    '<tr><td></td><td><button id="ai-save" class="btn">保存 Key</button><span id="ai-save-msg" class="meta-info" style="margin-left:10px"></span></td></tr>' +
+    '</table></div>' +
+    '<p style="font-size:12px;color:#8A837A;margin-top:8px">Key 仅保存在你本地浏览器（localStorage），不会上传到仓库。若用自定义域名访问，DeepSeek 可能限制跨域，可改用「通义千问」（支持任意域名）。</p></div>' +
+
+    '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+    '<input id="ai-name" class="input" type="text" placeholder="输入作品名称，如：功夫女足、给阿嬷的情书…">' +
+    '<button id="btn-ai" class="btn">AI 深度研判</button>' +
+    '<span id="ai-status" class="pill">就绪</span>' +
+    '</div>' +
+    '<div id="ai-result"><div class="empty" style="padding:20px 0">输入作品名称，点击「AI 深度研判」，平台将联网抓取并交给大模型生成量化研判。</div></div>';
+
+  var sel = document.getElementById("ai-provider");
+  var keyEl = document.getElementById("ai-key");
+  document.getElementById("ai-save").addEventListener("click", function () {
+    var p = sel.value;
+    var cfg2 = { provider: p, base: AI_PROVIDERS[p].base, model: AI_PROVIDERS[p].model, key: keyEl.value.trim() };
+    saveAIConfig(cfg2);
+    document.getElementById("ai-save-msg").textContent = "已保存 ✓";
+  });
+  sel.addEventListener("change", function () {
+    var p = sel.value;
+    var cfg2 = getAIConfig();
+    cfg2.provider = p; cfg2.base = AI_PROVIDERS[p].base; cfg2.model = AI_PROVIDERS[p].model;
+    saveAIConfig(cfg2);
+  });
+
+  var nameEl = document.getElementById("ai-name");
+  var btn = document.getElementById("btn-ai");
+  function go() { aiAnalyze(nameEl.value.trim()); }
+  btn.addEventListener("click", go);
+  nameEl.addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+}
+
+/* 联网抓取 Google News 相关新闻（供 AI 分析） */
+function fetchNewsFor(kw, limit) {
+  var q = encodeURIComponent(kw);
+  var url = "https://api.rss2json.com/v1/api.json?rss_url=" +
+    encodeURIComponent("https://news.google.com/rss/search?q=" + q + "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans");
+  return fetch(url, { mode: "cors" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var items = (d && d.items) || [];
+      return items.slice(0, limit || 8).map(function (it) {
+        return (it.title || "") + "（" + ((it.source && it.source.name) || "") + "，" + (it.pubDate || "").slice(0, 10) + "）";
+      }).join("\n");
+    })
+    .catch(function () { return ""; });
+}
+
+/* 调用大模型 */
+function callLLM(messages) {
+  var cfg = getAIConfig();
+  if (!cfg.key) return Promise.reject(new Error("请先在上方填写 API Key"));
+  return fetch(cfg.base.replace(/\/$/, "") + "/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
+    body: JSON.stringify({ model: cfg.model, messages: messages, temperature: 0.4 })
+  }).then(function (r) {
+    if (!r.ok) return r.text().then(function (t) { throw new Error("接口返回 " + r.status + "：" + t.slice(0, 120)); });
+    return r.json();
+  }).then(function (d) {
+    var c = d.choices && d.choices[0];
+    return c && c.message ? (c.message.content || "") : "";
+  });
+}
+
+function aiAnalyze(name) {
+  var box = document.getElementById("ai-result");
+  var st = document.getElementById("ai-status");
+  if (!name) { box.innerHTML = '<div class="empty">请输入作品名称。</div>'; return; }
+
+  st.textContent = "① 联网抓取中…";
+  st.className = "pill";
+  box.innerHTML = '<div class="empty">正在联网抓取「' + esc(name) + '」相关新闻并生成研判…</div>';
+
+  fetchNewsFor(name, 8).then(function (news) {
+    st.textContent = "② 大模型分析中…";
+    var newsBlock = news || "（未能联网抓取到相关新闻，请基于方法论给出通用研判框架）";
+    var prompt = [
+      "你是「映海御安阁」中国电影海外舆情与文化安全研判平台的分析引擎。",
+      "请对作品《" + name + "》进行海外舆情研判，并**只输出一个 JSON 对象**（不要 markdown 代码块），字段如下：",
+      "{",
+      "  \"conclusion\": [\"研判结论1\",\"研判结论2\",\"研判结论3\"],",
+      "  \"dims\": {\"触发强度\":0,\"对象敏感\":0,\"历史存量\":0,\"传播可切片\":0,\"现实后果\":0},",
+      "  \"score\": 0,",
+      "  \"level\": \"低|中|高\",",
+      "  \"heat\": 0,",
+      "  \"posRatio\": 0,",
+      "  \"riskRatio\": 0,",
+      "  \"type\": \"舆情类型\",",
+      "  \"advice\": [\"处置建议1\",\"处置建议2\"]",
+      "}",
+      "其中：dims 为五维风险各 1-5 分，score 为总分/25，heat 为舆情热度 0-100，posRatio/riskRatio 为正面与风险占比（0-100，两者与中性合计100）。",
+      "研判方法论：四层分析框架（作品文本/在地解码/平台扩散/政治再框架）；四类主导舆情（文化认同与政策型/邻国形象与刻板印象型/事实伦理与制度型/专业工艺与类型片型）；八大监测指标（议题迁移/主体升级/跨语言扩散/标签固化/现实转化/回应接受度/服务损害/合作方风险）。",
+      "以下是联网抓取到的相关新闻资料：",
+      "---",
+      newsBlock,
+      "---",
+      "请基于以上资料给出客观研判。"
+    ].join("\n");
+
+    callLLM([{ role: "user", content: prompt }]).then(function (text) {
+      renderAIResult(box, st, name, text);
+    }).catch(function (err) {
+      st.textContent = "分析失败";
+      st.className = "pill";
+      box.innerHTML = '<div class="card"><b>大模型调用失败：</b><div class="empty">' + esc(err.message || err) + '</div>' +
+        '<p style="font-size:12px;color:#8A837A">请检查 API Key 是否正确、模型供应商是否可用；若用自定义域名访问，建议改用「通义千问」。</p></div>';
+    });
+  });
+}
+
+function renderAIResult(box, st, name, text) {
+  var obj = null;
+  try {
+    var t = text.replace(/```json|```/g, "").trim();
+    obj = JSON.parse(t);
+  } catch (e) { obj = null; }
+
+  if (!obj || !obj.dims) {
+    st.textContent = "完成（AI 返回文本）";
+    st.className = "pill online";
+    box.innerHTML = '<div class="card"><h3>《' + esc(name) + '》AI 研判</h3><div class="quote-box">' + esc(text) + '</div></div>';
+    return;
+  }
+
+  var DIM_LABELS = ["触发强度", "对象敏感", "历史存量", "传播可切片", "现实后果"];
+  var dims = DIM_LABELS.map(function (k) {
+    var v = obj.dims[k] || 0;
+    return '<div class="dim-row"><span class="dim-label">' + k + '</span>' +
+      '<div class="dim-track"><div class="dim-fill" style="width:' + (v / 5 * 100) + '%;background:' + dimColor(v) + '"></div></div>' +
+      '<span style="flex:0 0 32px;font-size:12px;color:#8A837A">' + v + '/5</span></div>';
+  }).join("");
+  var levelCls = obj.level === "高" ? "high" : (obj.level === "中" ? "mid" : "low");
+  var net = Math.max(0, 100 - (obj.posRatio || 0) - (obj.riskRatio || 0));
+  var ratio = '<div class="ratio-track">' +
+    '<div class="ratio-seg" style="width:' + (obj.posRatio || 0) + '%;background:#274A64">正面 ' + (obj.posRatio || 0) + '%</div>' +
+    '<div class="ratio-seg" style="width:' + net + '%;background:#8A837A"></div>' +
+    '<div class="ratio-seg" style="width:' + (obj.riskRatio || 0) + '%;background:#A63A2B">风险 ' + (obj.riskRatio || 0) + '%</div>' +
+    '</div>';
+  var concl = (obj.conclusion || []).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join("");
+  var advice = (obj.advice || []).map(function (a, i) { return '<li><b>0' + (i + 1) + '</b>　' + esc(a) + '</li>'; }).join("");
+
+  box.innerHTML =
+    '<div class="grid grid-4" style="margin-bottom:16px">' +
+    '<div class="kpi-card"><span class="num">' + (obj.heat || 0) + '</span><span class="lab">AI 舆情热度</span></div>' +
+    '<div class="kpi-card"><span class="num">' + (obj.posRatio || 0) + '%</span><span class="lab">正面 / 专业</span></div>' +
+    '<div class="kpi-card"><span class="num">' + (obj.riskRatio || 0) + '%</span><span class="lab">风险舆情占比</span></div>' +
+    '<div class="kpi-card"><span class="num" style="color:' + (obj.level === "高" ? "#A63A2B" : "#3E7A55") + '">' + esc(obj.level || "-") + '</span><span class="lab">AI 风险等级</span></div>' +
+    '</div>' +
+    '<div class="grid grid-2">' +
+    '<div class="card"><h3>五维风险（AI 评分 ' + (obj.score || 0) + '/25）</h3>' + dims + '</div>' +
+    '<div class="card"><h3>舆情倾向量化</h3>' + ratio + '<p style="font-size:12px;color:#8A837A;margin-top:6px">舆情类型：' + esc(obj.type || "-") + '</p></div>' +
+    '</div>' +
+    '<div class="section-title">AI 研判结论</div><div class="card"><ol class="step-list">' + concl + '</ol></div>' +
+    '<div class="section-title">处置建议</div><div class="card"><ul class="step-list">' + advice + '</ul></div>';
+
+  st.textContent = "完成：AI 研判已生成";
+  st.className = "pill online";
+}
+
 var VIEWS = {
   "/overview": renderOverview,
   "/films": renderFilms,
@@ -564,6 +759,7 @@ var VIEWS = {
   "/monitor": renderMonitor,
   "/live": renderLive,
   "/search": renderSearch,
+  "/ai": renderAI,
   "/collect": renderCollect
 };
 
