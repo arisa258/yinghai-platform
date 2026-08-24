@@ -39,16 +39,27 @@ var PLATFORM = {
     { name: "合作方风险", def: "影院、平台、发行、品牌和人才代理的询问、暂停或退出", threshold: "核心合作方正式问询升黄；暂停升橙" }
   ],
 
+  /* 海外影视源（经 rss2json 服务器中转抓取，供研判中心与数据采集使用） */
+  overseas: [
+    { name: "The Guardian · Film", rss: "https://www.theguardian.com/film/rss" },
+    { name: "BBC · 娱乐与文化", rss: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml" },
+    { name: "Variety", rss: "https://variety.com/feed/" },
+    { name: "Hollywood Reporter", rss: "https://www.hollywoodreporter.com/feed/" },
+    { name: "IGN", rss: "https://feeds.ign.com/ign/games-all" }
+  ],
+
   /* 数据源清单（实时采集相关） */
   sources: [
     { name: "Google News", region: "全球", type: "新闻聚合·广域搜索", reach: "可直连" },
-    { name: "The Guardian", region: "英国", type: "海外主流媒体", reach: "受限" },
+    { name: "The Guardian · Film", region: "英国", type: "海外专业媒体", reach: "rss2json 中转" },
+    { name: "BBC · 娱乐与文化", region: "英国", type: "海外主流媒体", reach: "rss2json 中转" },
+    { name: "Variety", region: "美国", type: "海外行业媒体", reach: "rss2json 中转" },
+    { name: "Hollywood Reporter", region: "美国", type: "海外行业媒体", reach: "rss2json 中转" },
+    { name: "IGN", region: "美国", type: "影视游戏媒体", reach: "rss2json 中转" },
     { name: "Open Library", region: "全球", type: "图书百科", reach: "可直连" },
     { name: "TVMaze", region: "全球", type: "影视档案", reach: "可直连" },
-    { name: "豆瓣电影", region: "中国", type: "影评聚合", reach: "可直连" },
-    { name: "维基百科", region: "全球", type: "百科资料", reach: "受限" },
     { name: "iTunes Search", region: "全球", type: "媒体检索", reach: "可直连" },
-    { name: "Bing / Google 搜索", region: "全球", type: "搜索引擎", reach: "受限" }
+    { name: "豆瓣电影", region: "中国", type: "影评聚合", reach: "可直连" }
   ],
 
   /* 处置工具（纯逻辑，无案例数据） */

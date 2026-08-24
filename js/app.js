@@ -229,11 +229,13 @@ function searchWeb(kw) {
   });
 
   var newsPromises = qs.map(function (qq) { return fetchNewsFor(qq, 12); });
+  var overseasPromise = fetchOverseas(enKw);
   var bookUrl = "https://openlibrary.org/search.json?q=" + encodeURIComponent(kw) + "&limit=5";
   var tvUrl = "https://api.tvmaze.com/search/shows?q=" + encodeURIComponent(enKw) + "&limit=6";
   var itUrl = "https://itunes.apple.com/search?term=" + encodeURIComponent(enKw) + "&media=movie&entity=tvShow,movie&limit=6";
 
   return Promise.all(newsPromises.concat([
+    overseasPromise,
     fetch(bookUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch(tvUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch(itUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; })
@@ -246,15 +248,20 @@ function searchWeb(kw) {
         if (!seen[k]) { seen[k] = 1; news.push(it); }
       });
     }
-    news.forEach(function (it) { it._score = filmScore(it.title + " " + (it.description || "")); });
+    /* 海外影视源匹配结果，标记强相关 */
+    (res[n] || []).forEach(function (it) {
+      var k = (it.title || "") + "|" + (it.link || "");
+      if (!seen[k]) { seen[k] = 1; it._score = 2; news.push(it); }
+    });
+    news.forEach(function (it) { if (it._score === undefined) it._score = filmScore(it.title + " " + (it.description || "")); });
     news.sort(function (a, b) { return b._score - a._score; });
     return {
       news: news,
       related: news.filter(function (it) { return it._score >= 1; }),
       broad: news.filter(function (it) { return it._score === 0; }),
-      books: (res[n] && res[n].docs) || [],
-      tvs: (res[n + 1] && res[n + 1].length) ? res[n + 1] : [],
-      itunes: (res[n + 2] && res[n + 2].results) || []
+      books: (res[n + 1] && res[n + 1].docs) || [],
+      tvs: (res[n + 2] && res[n + 2].length) ? res[n + 2] : [],
+      itunes: (res[n + 3] && res[n + 3].results) || []
     };
   });
 }
@@ -263,9 +270,40 @@ function renderNewsItems(list, limit) {
   var items = (list || []).slice(0, limit || 10);
   if (!items.length) return '<div class="empty">未检索到影视相关新闻</div>';
   return items.map(function (it) {
+    var srcName = it._src || (it.source && it.source.name) || "";
     var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
-    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc((it.source && it.source.name) || "") + ')</span>' + link + '</div>';
+    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc(srcName) + ')</span>' + link + '</div>';
   }).join("");
+}
+
+/* 海外影视源抓取（经 rss2json 中转）：term 为空则返回全量，非空则按关键词过滤 */
+function fetchOverseas(term) {
+  var t = (term || "").toLowerCase();
+  var srcs = PLATFORM.overseas || [];
+  var ps = srcs.map(function (s) {
+    var url = "https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(s.rss);
+    return fetch(url, { mode: "cors" }).then(function (r) { return r.json(); }).then(function (d) {
+      var out = [];
+      ((d && d.items) || []).forEach(function (it) {
+        var title = it.title || "";
+        var desc = it.description || "";
+        if (t && title.toLowerCase().indexOf(t) < 0 && desc.toLowerCase().indexOf(t) < 0) return;
+        it._src = s.name;
+        out.push(it);
+      });
+      return out;
+    }).catch(function () { return []; });
+  });
+  return Promise.all(ps).then(function (lists) {
+    var out = [], seen = {};
+    lists.forEach(function (l) {
+      l.forEach(function (it) {
+        var k = (it.title || "") + "|" + (it.link || "");
+        if (!seen[k]) { seen[k] = 1; out.push(it); }
+      });
+    });
+    return out;
+  });
 }
 
 /* 新闻数据规格化 */
@@ -629,6 +667,11 @@ function renderCollect() {
     '<button id="btn-live" class="btn">立即联网抓取</button>' +
     '<div id="live-box" class="empty">尚未抓取，点击按钮联网获取最新海外影评。</div></div>' +
 
+    '<div class="section-title">海外影视源实时抓取</div>' +
+    '<div class="card"><p style="font-size:13px;color:#5C5750">点击按钮，抓取 Guardian / BBC / Variety / Hollywood Reporter / IGN 五家海外专业影视媒体的最新动态。</p>' +
+    '<button id="btn-overseas" class="btn">抓取海外影视源</button>' +
+    '<div id="overseas-box" class="empty">尚未抓取。</div></div>' +
+
     '<div class="section-title">最新采集条目</div>' +
     '<div class="card">' + items + '</div>' +
 
@@ -637,6 +680,19 @@ function renderCollect() {
 
   var btn = document.getElementById("btn-live");
   if (btn) btn.addEventListener("click", liveFetch);
+  var obtn = document.getElementById("btn-overseas");
+  if (obtn) obtn.addEventListener("click", overseasFetch);
+}
+
+function overseasFetch() {
+  var box = document.getElementById("overseas-box");
+  if (!box) return;
+  box.className = "empty";
+  box.textContent = "正在抓取 5 家海外影视源…";
+  fetchOverseas("").then(function (list) {
+    if (!list.length) { box.textContent = "未抓取到数据（接口限流或网络问题）。"; return; }
+    box.innerHTML = renderNewsItems(list, 15);
+  }).catch(function () { box.textContent = "抓取失败，请稍后再试。"; });
 }
 
 function liveFetch() {
