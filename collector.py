@@ -49,24 +49,29 @@ def fetch_douban():
 
 
 def fetch_guardian():
-    """The Guardian 电影频道 RSS：海外源，尽力而为"""
+    """The Guardian 电影频道 RSS：经 rss2json.com 服务器中转抓取，绕过本地网络限制"""
     if not HAVE_REQUESTS:
         return None
     try:
-        url = "https://www.theguardian.com/film/rss"
-        r = requests.get(url, headers=HEADERS, timeout=12)
+        rss = "https://www.theguardian.com/film/rss"
+        url = "https://api.rss2json.com/v1/api.json?rss_url=" + rss
+        r = requests.get(url, headers=HEADERS, timeout=18)
         if r.status_code != 200:
             return None
-        root = ET.fromstring(r.content)
+        data = r.json()
         items = []
-        for item in root.iter("item"):
-            title = ""
-            t = item.find("title")
-            if t is not None and t.text:
-                title = t.text.strip()
+        for it in (data.get("items") or [])[:15]:
+            title = (it.get("title") or "").strip()
             if title:
-                items.append({"title": title, "source": "The Guardian Film RSS", "summary": "海外主流媒体·影评与行业动态", "region": "英国"})
-        return items[:15]
+                items.append({
+                    "title": title,
+                    "source": "The Guardian Film RSS（rss2json 中转）",
+                    "summary": "海外主流媒体·影评与行业动态",
+                    "region": "英国",
+                    "link": it.get("link", ""),
+                    "date": (it.get("pubDate") or "")[:10],
+                })
+        return items if items else None
     except Exception:
         return None
 

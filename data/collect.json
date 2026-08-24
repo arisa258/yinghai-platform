@@ -1,25 +1,207 @@
 {
-  "status": "standby",
-  "updated": "2026-08-24 14:02",
+  "status": "online",
+  "updated": "2026-08-24 14:37",
   "items": [
     {
-      "title": "《功夫女足》韩国女性与体育形象争议（样例）",
-      "source": "智库报告案例库",
-      "summary": "邻国刻板印象型 · 高风险",
-      "region": "韩国"
+      "title": "奥德赛",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
     },
     {
-      "title": "《给阿嬷的情书》潮州话场次与方言政策（样例）",
-      "source": "智库报告案例库",
-      "summary": "文化认同与政策型 · 中高风险",
-      "region": "新加坡"
+      "title": "欢迎来龙餐馆",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
     },
     {
-      "title": "《火遮眼》海外专业口碑样本（样例）",
-      "source": "智库报告案例库",
-      "summary": "专业工艺与类型片型 · 低—中风险",
-      "region": "国际"
+      "title": "空枪",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "牛来",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "大唐妖探",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "机器人总动员",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "蜘蛛侠：崭新之日",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "痴迷",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "八仙！",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "去你的岛",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "逃出绝命街",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "年会不能停！2",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "功夫女足",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "不想失去你",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "恐怖游轮",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "汪汪队立大功大电影3：勇闯恐龙岛",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "想你了",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "后室",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "小黄人与大怪兽",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "玩具总动员5",
+      "source": "豆瓣电影·正在热映",
+      "summary": "国内影评聚合源，实时热度",
+      "region": "中国"
+    },
+    {
+      "title": "On Different Grounds review – Cupid’s-conspiracy romcom brings Nollywood and Bollywood together",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/2026/aug/24/on-different-grounds-review-nollywood-bollywood",
+      "date": "2026-08-24"
+    },
+    {
+      "title": "Mark Ruffalo fires back at Paramount Skydance after it accuses him of using ‘antisemitic tropes’",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/2026/aug/24/mark-ruffalo-fires-back-paramount-oracle-accused-antisemitic-tropes-israel",
+      "date": "2026-08-24"
+    },
+    {
+      "title": "Drive-in cinemas are rare these days. But the last one in Melbourne’s north still draws a faithful crowd",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/ng-interactive/2026/aug/23/australia-drive-in-cinemas-melbourne-coburg",
+      "date": "2026-08-23"
+    },
+    {
+      "title": "Stand By Me at 40: Rob Reiner’s seminal coming-of-age saga remains a bittersweet triumph",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/2026/aug/22/stand-by-me-40th-anniversary",
+      "date": "2026-08-22"
+    },
+    {
+      "title": "‘Embryonic’: lost novel by French film-maker Éric Rohmer is republished",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/2026/aug/22/elisabeth-lost-novel-by-french-film-maker-eric-rohmer-is-republished",
+      "date": "2026-08-22"
+    },
+    {
+      "title": "David Harbour has blown Tony Stark’s cover in Avengers: Doomsday. It might just be what Marvel needs",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/2026/aug/21/avengers-doomsday-robert-downey-jr-tony-stark-david-harbour-marvel",
+      "date": "2026-08-21"
+    },
+    {
+      "title": "The Odyssey becomes highest grossing R-rated film of all time",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/2026/aug/21/the-odyssey-highest-grossing-r-rated-film-of-all-time",
+      "date": "2026-08-21"
+    },
+    {
+      "title": "Teenage Sex and Death at Camp Miasma review – Gillian Anderson superb in queer slasher spectacular",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/2026/may/14/teenage-sex-and-death-at-camp-miasma-review-seductive-gillian-anderson-fulfils-a-rapturous-slasher-fan-obsession",
+      "date": "2026-05-14"
+    },
+    {
+      "title": "&amp; Sons review – Bill Nighy and Imelda Staunton’s riveting showdown rescues a laborious plot",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/2025/oct/17/and-sons-review-bill-nighy-imelda-staunton",
+      "date": "2025-10-17"
+    },
+    {
+      "title": "Coyote Vs Acme review – quirky comedy returns from the dead to flip Wile E Coyote’s slapstick-violent world",
+      "source": "The Guardian Film RSS（rss2json 中转）",
+      "summary": "海外主流媒体·影评与行业动态",
+      "region": "英国",
+      "link": "https://www.theguardian.com/film/2026/aug/19/coyote-vs-acme-review-wile-e-coyote-roadrunner",
+      "date": "2026-08-19"
     }
   ],
-  "note": "演示样例（运行环境无可用数据源）"
+  "note": "真实采集数据"
 }

@@ -295,11 +295,40 @@ function renderCollect() {
     '</div>' +
     '<p style="font-size:13px;color:#5C5750;margin-top:10px">采集方式：本地脚本抓取公开可直连源（豆瓣、公开 RSS 等）→ 生成 data/collect.json → 平台加载展示；海外源尽力抓取，受限源用智库报告样例数据兜底。</p></div>' +
 
+    '<div class="section-title">实时联网抓取</div>' +
+    '<div class="card"><p style="font-size:13px;color:#5C5750">点击按钮，平台经 <b>rss2json.com</b> 服务器中转实时抓取 The Guardian 电影频道最新影评（服务器端抓取，绕过本地网络限制）。</p>' +
+    '<button id="btn-live" class="btn">立即联网抓取</button>' +
+    '<div id="live-box" class="empty">尚未抓取，点击上方按钮联网获取最新海外影评。</div></div>' +
+
     '<div class="section-title">最新采集条目</div>' +
     '<div class="card">' + items + '</div>' +
 
     '<div class="section-title">数据源清单</div>' +
     '<div class="card">' + srcs + '</div>';
+
+    var btn = document.getElementById("btn-live");
+    if (btn) { btn.addEventListener("click", liveFetch); }
+}
+
+/* 实时联网抓取：经 rss2json 服务器中转拉取 Guardian 影评 */
+function liveFetch() {
+  var box = document.getElementById("live-box");
+  if (!box) return;
+  box.className = "empty";
+  box.textContent = "正在联网抓取 The Guardian 最新影评…";
+  var rss = encodeURIComponent("https://www.theguardian.com/film/rss");
+  var url = "https://api.rss2json.com/v1/api.json?rss_url=" + rss;
+  fetch(url, { mode: "cors" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var items = (d && d.items) || [];
+      if (!items.length) { box.textContent = "未获取到数据（接口限流或网络问题），请稍后再试。"; return; }
+      box.innerHTML = items.slice(0, 10).map(function (it) {
+        var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
+        return '<div class="item-line"><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ')</span>' + link + '</div>';
+      }).join("");
+    })
+    .catch(function () { box.textContent = "抓取失败（网络或接口限制），请稍后再试。"; });
 }
 
 /* ---------- 视图 6：平台架构 ---------- */

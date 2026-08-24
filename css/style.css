@@ -307,6 +307,22 @@ table.data tbody tr:nth-child(even) { background: #FAF7F1; }
 .source-name { font-weight: 500; }
 .source-sub { color: var(--ink-3); font-size: 12px; }
 
+/* 按钮 */
+.btn {
+  display: inline-block;
+  padding: 8px 20px;
+  background: var(--ink-blue);
+  color: #FFF;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  margin: 6px 0 12px;
+  font-family: var(--font-sans);
+}
+.btn:hover { opacity: 0.9; }
+.btn:active { transform: translateY(1px); }
+
 /* 数据条目 */
 .item-line { padding: 7px 0; border-bottom: 1px dashed var(--hairline); font-size: 13px; }
 .item-line:last-child { border-bottom: none; }
