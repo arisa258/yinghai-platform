@@ -208,25 +208,64 @@ function fetchNewsFor(kw, limit) {
     .catch(function () { return []; });
 }
 
-/* 广域检索：新闻 + 图书 + 影视 */
+/* 影视领域关键词：用于相关性打分，过滤无关内容 */
+var FILM_WORDS = ["电影", "影视", "影片", "影院", "票房", "上映", "剧集", "电视剧", "动漫", "动画", "导演", "演员", "影评", "院线", "续集", "首映", "观影", "预告", "角色", "编剧", "film", "movie", "cinema", "series", "anime", "animation", "tv show", "screening", "box office", "episode", "season"];
+
+function filmScore(text) {
+  var t = String(text || "").toLowerCase();
+  var n = 0;
+  for (var i = 0; i < FILM_WORDS.length; i++) if (t.indexOf(FILM_WORDS[i]) >= 0) n++;
+  return n;
+}
+
+/* 广域检索（多关键词 × 多源，扩大搜索量；影视相关性排序） */
 function searchWeb(kw) {
-  var q = encodeURIComponent(kw);
-  var newsUrl = "https://api.rss2json.com/v1/api.json?rss_url=" +
-    encodeURIComponent("https://news.google.com/rss/search?q=" + q + "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans");
-  var bookUrl = "https://openlibrary.org/search.json?q=" + q + "&limit=4";
   var enKw = kw.replace(/[^\x00-\x7F]/g, " ").trim() || kw;
-  var tvUrl = "https://api.tvmaze.com/search/shows?q=" + encodeURIComponent(enKw) + "&limit=4";
-  return Promise.all([
-    fetch(newsUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
+  var queries = [kw, kw + " 电影 影视 票房", kw + " 动漫 动画", enKw];
+  var seenQ = {}, qs = [];
+  queries.forEach(function (qq) {
+    qq = qq.trim();
+    if (qq && !seenQ[qq]) { seenQ[qq] = 1; qs.push(qq); }
+  });
+
+  var newsPromises = qs.map(function (qq) { return fetchNewsFor(qq, 12); });
+  var bookUrl = "https://openlibrary.org/search.json?q=" + encodeURIComponent(kw) + "&limit=5";
+  var tvUrl = "https://api.tvmaze.com/search/shows?q=" + encodeURIComponent(enKw) + "&limit=6";
+  var itUrl = "https://itunes.apple.com/search?term=" + encodeURIComponent(enKw) + "&media=movie&entity=tvShow,movie&limit=6";
+
+  return Promise.all(newsPromises.concat([
     fetch(bookUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
-    fetch(tvUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; })
-  ]).then(function (res) {
+    fetch(tvUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
+    fetch(itUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; })
+  ])).then(function (res) {
+    var n = qs.length;
+    var seen = {}, news = [];
+    for (var i = 0; i < n; i++) {
+      (res[i] || []).forEach(function (it) {
+        var k = (it.title || "") + "|" + (it.link || "");
+        if (!seen[k]) { seen[k] = 1; news.push(it); }
+      });
+    }
+    news.forEach(function (it) { it._score = filmScore(it.title + " " + (it.description || "")); });
+    news.sort(function (a, b) { return b._score - a._score; });
     return {
-      news: (res[0] && res[0].items) || [],
-      books: (res[1] && res[1].docs) || [],
-      tvs: (res[2] && res[2].length) ? res[2] : []
+      news: news,
+      related: news.filter(function (it) { return it._score >= 1; }),
+      broad: news.filter(function (it) { return it._score === 0; }),
+      books: (res[n] && res[n].docs) || [],
+      tvs: (res[n + 1] && res[n + 1].length) ? res[n + 1] : [],
+      itunes: (res[n + 2] && res[n + 2].results) || []
     };
   });
+}
+
+function renderNewsItems(list, limit) {
+  var items = (list || []).slice(0, limit || 10);
+  if (!items.length) return '<div class="empty">未检索到影视相关新闻</div>';
+  return items.map(function (it) {
+    var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
+    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc((it.source && it.source.name) || "") + ')</span>' + link + '</div>';
+  }).join("");
 }
 
 /* 新闻数据规格化 */
@@ -259,23 +298,18 @@ function parseAI(text) {
 function renderOverview() {
   $view.innerHTML =
     '<div class="section-title">国内影视产业 · AI 总体分析</div>' +
-    '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-    '<input id="ov-topic" class="input" type="text" placeholder="国内影视产业" value="国内影视产业" style="max-width:260px">' +
-    '<button id="btn-ov" class="btn">AI 分析国内情况</button>' +
-    '<span id="ov-status" class="pill">就绪</span>' +
+    '<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+    '<span class="meta-info">进入即自动联网抓取国内影视产业动态，交由 AI 生成总体研判</span>' +
+    '<span style="display:flex;gap:10px;align-items:center"><button id="btn-ov" class="btn">重新分析</button><span id="ov-status" class="pill">加载中…</span></span>' +
     '</div>' +
     aiConfigBlock() +
-    '<div id="ov-result"><div class="empty" style="padding:24px 0">点击「AI 分析国内情况」，平台将实时联网抓取国内影视产业动态，并交由大模型生成总体研判。</div></div>';
+    '<div id="ov-result"><div class="empty">正在联网抓取国内影视产业动态…</div></div>';
 
   bindAIConfig();
   document.getElementById("btn-ov").addEventListener("click", function () {
-    var t = document.getElementById("ov-topic").value.trim();
-    overviewAnalyze(t || "国内影视产业");
+    overviewAnalyze("国内影视产业");
   });
-  var tp = document.getElementById("ov-topic");
-  tp.addEventListener("keydown", function (e) {
-    if (e.key === "Enter") overviewAnalyze(tp.value.trim() || "国内影视产业");
-  });
+  overviewAnalyze("国内影视产业");
 }
 
 function overviewAnalyze(topic) {
@@ -285,7 +319,7 @@ function overviewAnalyze(topic) {
   st.className = "pill";
   box.innerHTML = '<div class="empty">正在联网抓取「' + esc(topic) + '」相关动态并交由 AI 分析…</div>';
 
-  fetchNewsFor(topic, 10).then(function (news) {
+  fetchNewsFor(topic, 15).then(function (news) {
     st.textContent = "② 大模型分析中…";
     var newsBlock = news.length
       ? news.map(function (it) { return "- " + (it.title || "") + "（" + ((it.source && it.source.name) || "") + "，" + (it.pubDate || "").slice(0, 10) + "）"; }).join("\n")
@@ -402,7 +436,9 @@ function analyzeWork(kw) {
     st.textContent = "② AI 研判中…";
     var spec = normalizeNews(data.news);
     var newsBlock = data.news.length
-      ? data.news.map(function (it) { return "- " + (it.title || "") + "（" + ((it.source && it.source.name) || "") + "，" + (it.pubDate || "").slice(0, 10) + "）"; }).join("\n")
+      ? data.news.map(function (it) {
+          return "- " + (it.title || "") + "（" + ((it.source && it.source.name) || "") + "，" + (it.pubDate || "").slice(0, 10) + "）" + (it._score >= 1 ? " ✓影视相关" : " ○疑似泛化");
+        }).join("\n")
       : "（未抓到实时新闻）";
 
     var prompt = [
@@ -427,7 +463,7 @@ function analyzeWork(kw) {
       "- 四类主导舆情：文化认同与政策型 / 邻国形象与刻板印象型 / 事实伦理与制度型 / 专业工艺与类型片型",
       "- 八大监测指标（alerts 请根据资料判断哪些已触发）：议题迁移、主体升级、跨语言扩散、标签固化、现实转化、回应接受度、服务损害、合作方风险",
       "- RACI 决策：A=最终拍板 R=直接执行 C=必须会签 I=知会",
-      "实时抓取到的新闻资料：",
+      "实时抓取到的新闻资料（标注 ○疑似泛化 的条目多为同名无关内容，请忽略，只基于影视相关内容研判）：",
       "---",
       newsBlock,
       "---",
@@ -447,11 +483,10 @@ function analyzeWork(kw) {
 }
 
 function analyzeRawBlock(data, spec) {
-  var newsItems = (data.news || []).slice(0, 8).map(function (it) {
-    var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
-    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc((it.source && it.source.name) || "") + ')</span>' + link + '</div>';
-  }).join("");
-  return specBlock(spec) + '<div class="section-title">实时检索结果</div><div class="card">' + (newsItems || '<div class="empty">未检索到相关新闻</div>') + '</div>';
+  return specBlock(spec) +
+    '<div class="section-title">实时检索结果（影视相关优先）</div>' +
+    '<div class="card">' + renderNewsItems(data.related, 10) +
+    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（已过滤展示）</div>' : '') + '</div>';
 }
 
 function specBlock(spec) {
@@ -530,11 +565,9 @@ function renderAnalyzeResult(box, st, kw, text, data, spec) {
     '<div class="section-title">AI 研判结论</div><div class="card"><ol class="step-list">' + concl + '</ol></div>' +
     '<div class="section-title">处置建议（可参考处置工具中的 RACI 规则）</div><div class="card"><ul class="step-list">' + advice + '</ul></div>' +
 
-    '<div class="section-title">实时检索结果</div>' +
-    '<div class="card">' + (data.news || []).slice(0, 8).map(function (it) {
-      var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
-      return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc((it.source && it.source.name) || "") + ')</span>' + link + '</div>';
-    }).join("") + (data.news && data.news.length ? "" : '<div class="empty">未检索到相关新闻</div>') + '</div>';
+    '<div class="section-title">实时检索结果（影视相关优先）</div>' +
+    '<div class="card">' + renderNewsItems(data.related, 10) +
+    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（与影视无关，已过滤展示）</div>' : '') + '</div>';
 
   st.textContent = "完成：研判已生成";
   st.className = "pill online";
