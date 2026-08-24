@@ -323,6 +323,22 @@ table.data tbody tr:nth-child(even) { background: #FAF7F1; }
 .btn:hover { opacity: 0.9; }
 .btn:active { transform: translateY(1px); }
 
+/* 下拉选择 */
+.select {
+  padding: 7px 12px;
+  border: 1px solid var(--hairline);
+  background: var(--card);
+  font-size: 14px;
+  color: var(--ink);
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  max-width: 220px;
+}
+
+/* 舆情倾向堆叠条 */
+.ratio-track { display: flex; height: 26px; border: 1px solid var(--hairline); overflow: hidden; margin: 6px 0 4px; }
+.ratio-seg { display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; white-space: nowrap; overflow: hidden; }
+
 /* 数据条目 */
 .item-line { padding: 7px 0; border-bottom: 1px dashed var(--hairline); font-size: 13px; }
 .item-line:last-child { border-bottom: none; }

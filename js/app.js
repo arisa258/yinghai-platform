@@ -22,8 +22,8 @@ var TITLES = {
   "/films": "影片研判",
   "/events": "事件工作台",
   "/monitor": "监测预警",
-  "/collect": "数据采集",
-  "/about": "平台架构"
+  "/live": "实时监测",
+  "/collect": "数据采集"
 };
 
 /* ---------- SVG 图表 ---------- */
@@ -331,27 +331,133 @@ function liveFetch() {
     .catch(function () { box.textContent = "抓取失败（网络或接口限制），请稍后再试。"; });
 }
 
-/* ---------- 视图 6：平台架构 ---------- */
-function renderAbout() {
-  var arch = PLATFORM.architecture.map(function (a, i) {
-    return '<li><span class="arch-no">0' + (i + 1) + '</span><div><div class="arch-name">' + esc(a.layer) + '</div><div class="arch-desc">' + esc(a.desc) + '</div></div></li>';
+/* ---------- 视图 6：实时监测（自选影片 + 实时联网量化） ---------- */
+
+/* 各影片实时量化数据（热度/倾向基于智库报告基线；keywords 用于实时报道匹配） */
+var LIVE_DATA = {
+  "geama": { heat: 72, pos: 40, risk: 38, keywords: ["a letter to grandma", "grandma", "teochew"], news: [
+    { title: "新加坡批准更多潮州话场次并检视方言电影规则", date: "2026-07", source: "CNA" },
+    { title: "《给阿嬷的情书》进入英国、爱尔兰和法国", date: "2026-07", source: "Screen Daily" } ] },
+  "huo": { heat: 55, pos: 62, risk: 12, keywords: ["fire shrouds"], news: [
+    { title: "《火遮眼》动作设计获专业媒体好评", date: "2026-06", source: "Los Angeles Times" } ] },
+  "gongfu": { heat: 88, pos: 18, risk: 72, keywords: ["kung fu women", "kung fu"], news: [
+    { title: "《功夫女足》韩国女足形象争议持续", date: "2026-07", source: "The Korea Times" },
+    { title: "《功夫女足》在韩国“越位”引发中韩评价差异", date: "2026-07", source: "Korea JoongAng Daily" } ] },
+  "jail": { heat: 85, pos: 15, risk: 74, keywords: ["mom from prison", "prison"], news: [
+    { title: "《监狱来的妈妈》撤档与司法事实争议", date: "2026-07", source: "South China Morning Post" },
+    { title: "影片撤档、真实案件与服刑拍摄争议", date: "2026-07", source: "The Standard" } ] },
+  "baxian": { heat: 45, pos: 58, risk: 20, keywords: ["eight immortals"], news: [
+    { title: "《八仙！》海外上映安排", date: "2026-07", source: "CGTN" } ] },
+  "faf": { heat: 50, pos: 70, risk: 8, keywords: ["farewell my concubine"], news: [
+    { title: "《霸王别姬》4K修复版重返戛纳经典单元", date: "2026-05", source: "戛纳电影节" } ] }
+};
+
+var currentFilmId = null;
+
+function renderLive() {
+  if (!currentFilmId) currentFilmId = PLATFORM.films[0].id;
+  var opts = PLATFORM.films.map(function (f) {
+    return '<option value="' + f.id + '"' + (f.id === currentFilmId ? ' selected' : '') + '>' + esc(f.title) + '</option>';
   }).join("");
 
   $view.innerHTML =
-    '<div class="section-title">平台五层架构</div>' +
-    '<div class="card"><ul class="arch-list">' + arch + '</ul></div>' +
+    '<div class="section-title">实时舆情监测 · 自选影片</div>' +
+    '<div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+    '<label style="font-size:14px;color:#5C5750">监测影片：</label>' +
+    '<select id="film-select" class="select">' + opts + '</select>' +
+    '<button id="btn-refresh" class="btn">刷新实时数据</button>' +
+    '<span id="live-status" class="pill">待加载</span>' +
+    '</div>' +
+    '<div id="live-panel"><div class="empty">正在加载…</div></div>';
 
-    '<div class="section-title">平台定位：人机协同研判中枢</div>' +
-    '<div class="card"><p>平台不是用 AI 取代人工研判，而是用数据采集、指标监测、流程标准化<strong>赋能决策</strong>：机器负责多语种采集、指标触发与图谱呈现，专家负责事实核验、语境研判与最终定性，坚持“热度与倾向分离”“问题精准比对策精准更重要”的原则。</p>' +
-    '<p style="margin-top:6px">核心判断：中国电影海外舆情已从影评—票房评价转向作品文本、在地解码、事实伦理、机构使用与地缘框架共同作用的复合舆情；传统“发海报—找影评—看票房”已不足以管理出海风险。</p></div>' +
+  document.getElementById("film-select").addEventListener("change", function () {
+    currentFilmId = this.value;
+    renderLivePanel(false);
+  });
+  document.getElementById("btn-refresh").addEventListener("click", function () {
+    renderLivePanel(true);
+  });
+  renderLivePanel(false);
+}
 
-    '<div class="section-title">项目信息</div>' +
-    '<div class="card"><div class="table-wrap"><table class="data">' +
-    '<tr><td style="width:110px">项目名称</td><td>' + esc(PLATFORM.meta.name) + '：' + esc(PLATFORM.meta.sub) + '</td></tr>' +
-    '<tr><td>参赛单位</td><td>' + esc(PLATFORM.meta.org) + '</td></tr>' +
-    '<tr><td>版本</td><td>' + esc(PLATFORM.meta.version) + '</td></tr>' +
-    '<tr><td>数据截止</td><td>2026-07-30（智库研究报告数据基线）</td></tr>' +
-    '</table></div></div>';
+function renderLivePanel() {
+  var f = null;
+  for (var i = 0; i < PLATFORM.films.length; i++) if (PLATFORM.films[i].id === currentFilmId) f = PLATFORM.films[i];
+  if (!f) return;
+  var ld = LIVE_DATA[f.id] || { heat: 50, pos: 50, risk: 20, keywords: [], news: [] };
+
+  var radar = radarSVG(f.dims, 260, "#A63A2B");
+  var net = 100 - ld.pos - ld.risk;
+  var ratio = '<div class="ratio-track" role="img" aria-label="舆情倾向：正面 ' + ld.pos + '%，风险 ' + ld.risk + '%，中性 ' + net + '%">' +
+    '<div class="ratio-seg" style="width:' + ld.pos + '%;background:#274A64">正面 ' + ld.pos + '%</div>' +
+    '<div class="ratio-seg" style="width:' + net + '%;background:#8A837A"></div>' +
+    '<div class="ratio-seg" style="width:' + ld.risk + '%;background:#A63A2B">风险 ' + ld.risk + '%</div>' +
+    '</div>';
+
+  var panel =
+    '<div class="grid grid-4" style="margin-bottom:16px">' +
+    '<div class="kpi-card"><span class="num">' + ld.heat + '</span><span class="lab">舆情热度</span></div>' +
+    '<div class="kpi-card"><span class="num">' + ld.pos + '%</span><span class="lab">正面 / 专业讨论</span></div>' +
+    '<div class="kpi-card"><span class="num">' + ld.risk + '%</span><span class="lab">风险舆情占比</span></div>' +
+    '<div class="kpi-card"><span class="num" style="color:' + (f.level.indexOf("高") >= 0 ? "#A63A2B" : "#3E7A55") + '">' + esc(f.level) + '</span><span class="lab">综合风险等级</span></div>' +
+    '</div>' +
+
+    '<div class="grid grid-2">' +
+    '<div class="card"><h3>五维风险研判</h3>' + radar +
+    '<p style="font-size:12px;color:#8A837A;margin-top:6px">综合评分 ' + f.score + '/25 · ' + esc(f.type) + '</p></div>' +
+    '<div class="card"><h3>舆情倾向量化</h3>' + ratio +
+    '<p style="font-size:13px;color:#5C5750;margin:10px 0 6px"><b>研判结论：</b>' + esc(f.verdict) + '</p>' +
+    '<p style="font-size:13px;color:#5C5750;margin-bottom:0"><b>管理重点：</b>' + esc(f.manage) + '</p></div>' +
+    '</div>' +
+
+    '<div class="section-title">实时相关报道（联网抓取）</div>' +
+    '<div class="card"><div id="news-box" class="empty">正在联网抓取 The Guardian 影评流并匹配本片…</div></div>';
+
+  document.getElementById("live-panel").innerHTML = panel;
+  liveFetchFilm(f, ld);
+}
+
+/* 实时联网：经 rss2json 抓 Guardian 影评流，按本片关键词匹配 */
+function liveFetchFilm(f, ld) {
+  var st = document.getElementById("live-status");
+  var box = document.getElementById("news-box");
+  st.textContent = "联网中…";
+  st.className = "pill";
+  var rss = encodeURIComponent("https://www.theguardian.com/film/rss");
+  var url = "https://api.rss2json.com/v1/api.json?rss_url=" + rss;
+  fetch(url, { mode: "cors" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var items = (d && d.items) || [];
+      var kws = (ld.keywords || []).map(function (k) { return k.toLowerCase(); });
+      var matched = items.filter(function (it) {
+        var t = (it.title || "").toLowerCase();
+        return kws.some(function (k) { return k && t.indexOf(k) >= 0; });
+      });
+      if (matched.length) {
+        box.innerHTML = matched.map(function (it) {
+          var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
+          return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ')</span>' + link + '</div>';
+        }).join("");
+        st.textContent = "已联网：抓取 " + items.length + " 篇，匹配本片 " + matched.length + " 篇";
+        st.className = "pill online";
+      } else {
+        var sample = (ld.news || []).map(function (n) {
+          return '<div class="item-line"><span class="light yellow"></span><b>' + esc(n.title) + '</b> <span style="color:#8A837A">(' + esc(n.date) + ' · ' + esc(n.source) + ' · 智库样本)</span></div>';
+        }).join("");
+        box.innerHTML = '<div class="empty">近期实时影评流中未匹配到本片报道（海外源覆盖有限）。以下为团队智库报告积累的<b>本片历史舆情样本</b>：</div>' + (sample || '<div class="empty">暂无样本</div>');
+        st.textContent = "已联网：实时源未匹配本片，显示历史样本";
+        st.className = "pill";
+      }
+    })
+    .catch(function () {
+      box.innerHTML = '<div class="empty">联网失败（网络或接口限制）。以下为团队智库报告积累的本片舆情样本：</div>' +
+        (ld.news || []).map(function (n) {
+          return '<div class="item-line"><b>' + esc(n.title) + '</b> <span style="color:#8A837A">(' + esc(n.date) + ' · ' + esc(n.source) + ')</span></div>';
+        }).join("");
+      st.textContent = "联网失败，显示历史样本";
+      st.className = "pill";
+    });
 }
 
 var VIEWS = {
@@ -359,8 +465,8 @@ var VIEWS = {
   "/films": renderFilms,
   "/events": renderEvents,
   "/monitor": renderMonitor,
-  "/collect": renderCollect,
-  "/about": renderAbout
+  "/live": renderLive,
+  "/collect": renderCollect
 };
 
 /* ---------- 初始化 ---------- */
