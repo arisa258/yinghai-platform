@@ -209,6 +209,14 @@ function rss2jsonUrl(rss) {
   return k ? base + "&api_key=" + encodeURIComponent(k) : base;
 }
 
+/* 未配置 rss2json key 时的醒目提示 */
+function rssKeyNotice() {
+  if (getRssKey()) return "";
+  return '<div class="card" style="border-left:3px solid var(--warn);margin-bottom:16px">' +
+    '<b style="color:#B77E22">⚠ 未配置 rss2json Key</b>：实时抓取经 rss2json.com 中转，<b>无 key 会被限流导致「实时报道为 0」</b>。' +
+    '请到「<b>数据采集</b>」页 →「中转服务 Key 设置」填入免费 key（rss2json.com → Get free API key，Google 登录即得）。</div>';
+}
+
 function fetchNewsFor(kw, limit) {
   var q = encodeURIComponent(kw);
   var rss = "https://news.google.com/rss/search?q=" + q + "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans";
@@ -410,6 +418,7 @@ function parseAI(text) {
 /* ---------- 视图 1：总览看板（AI 国内影视产业分析） ---------- */
 function renderOverview() {
   $view.innerHTML =
+    rssKeyNotice() +
     '<div class="section-title">国内影视产业 · AI 总体分析</div>' +
     '<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
     '<span class="meta-info">进入即自动联网抓取国内影视产业动态，交由 AI 生成总体研判</span>' +
@@ -520,6 +529,7 @@ var pendingSearch = null;
 
 function renderAnalyze() {
   $view.innerHTML =
+    rssKeyNotice() +
     '<div class="section-title">研判中心 · 作品 / 主题综合分析</div>' +
     '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
     '<input id="az-input" class="input" type="text" placeholder="输入作品或主题，如：功夫女足、给阿嬷的情书、中国电影出海…">' +
