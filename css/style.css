@@ -348,6 +348,7 @@ table.data tbody tr:nth-child(even) { background: #FAF7F1; }
   font-family: var(--font-sans);
 }
 .input:focus { outline: none; border-color: var(--ink-blue); }
+.top-search { width: 200px; min-width: 0; }
 
 /* 舆情倾向堆叠条 */
 .ratio-track { display: flex; height: 26px; border: 1px solid var(--hairline); overflow: hidden; margin: 6px 0 4px; }
@@ -380,4 +381,6 @@ table.data tbody tr:nth-child(even) { background: #FAF7F1; }
   .grid-2 { grid-template-columns: 1fr; }
   .foot { flex-direction: column; }
   .bar-label { flex-basis: 110px; }
+  .top-search { display: none; }
+  .meta-info { display: none; }
 }

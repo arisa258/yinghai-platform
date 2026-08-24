@@ -354,6 +354,7 @@ var LIVE_DATA = {
 };
 
 var currentFilmId = null;
+var pendingSearch = null;
 
 function renderLive() {
   if (!currentFilmId) currentFilmId = PLATFORM.films[0].id;
@@ -476,7 +477,13 @@ function renderSearch() {
   function go() { searchAll(input.value.trim()); }
   btn.addEventListener("click", go);
   input.addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
-  input.focus();
+  if (pendingSearch) {
+    input.value = pendingSearch;
+    searchAll(pendingSearch);
+    pendingSearch = null;
+  } else {
+    input.focus();
+  }
 }
 
 function searchAll(kw) {
@@ -567,6 +574,16 @@ function init() {
   loadCollect();
   router();
   window.addEventListener("hashchange", router);
+
+  var gs = document.getElementById("global-search");
+  if (gs) {
+    gs.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        var v = gs.value.trim();
+        if (v) { pendingSearch = v; location.hash = "#/search"; }
+      }
+    });
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);
