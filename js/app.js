@@ -198,11 +198,21 @@ function bindAIConfig() {
 }
 
 /* ---------- 联网抓取 ---------- */
+/* rss2json 中转：无 key 受限流（429），可配置免费 key 提升稳定性 */
+function getRssKey() {
+  try { return (localStorage.getItem("rss2json_key") || "").trim(); } catch (e) { return ""; }
+}
+
+function rss2jsonUrl(rss) {
+  var base = "https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(rss);
+  var k = getRssKey();
+  return k ? base + "&api_key=" + encodeURIComponent(k) : base;
+}
+
 function fetchNewsFor(kw, limit) {
   var q = encodeURIComponent(kw);
-  var url = "https://api.rss2json.com/v1/api.json?rss_url=" +
-    encodeURIComponent("https://news.google.com/rss/search?q=" + q + "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans");
-  return fetch(url, { mode: "cors" })
+  var rss = "https://news.google.com/rss/search?q=" + q + "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans";
+  return fetch(rss2jsonUrl(rss), { mode: "cors" })
     .then(function (r) { return r.json(); })
     .then(function (d) { return (d && d.items) || []; })
     .catch(function () { return []; });
@@ -229,12 +239,14 @@ function searchWeb(kw) {
   });
 
   var newsPromises = qs.map(function (qq) { return fetchNewsFor(qq, 12); });
+  var bingPromise = fetchBingNews(kw);
   var overseasPromise = fetchOverseas(enKw);
   var bookUrl = "https://openlibrary.org/search.json?q=" + encodeURIComponent(kw) + "&limit=5";
   var tvUrl = "https://api.tvmaze.com/search/shows?q=" + encodeURIComponent(enKw) + "&limit=6";
   var itUrl = "https://itunes.apple.com/search?term=" + encodeURIComponent(enKw) + "&media=movie&entity=tvShow,movie&limit=6";
 
   return Promise.all(newsPromises.concat([
+    bingPromise,
     overseasPromise,
     fetch(bookUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch(tvUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
@@ -248,21 +260,47 @@ function searchWeb(kw) {
         if (!seen[k]) { seen[k] = 1; news.push(it); }
       });
     }
-    /* 海外影视源匹配结果，标记强相关 */
+    /* 国内 Bing 新闻源（中文，强相关） */
     (res[n] || []).forEach(function (it) {
       var k = (it.title || "") + "|" + (it.link || "");
       if (!seen[k]) { seen[k] = 1; it._score = 2; news.push(it); }
     });
-    news.forEach(function (it) { if (it._score === undefined) it._score = filmScore(it.title + " " + (it.description || "")); });
-    news.sort(function (a, b) { return b._score - a._score; });
-    return {
-      news: news,
-      related: news.filter(function (it) { return it._score >= 1; }),
-      broad: news.filter(function (it) { return it._score === 0; }),
-      books: (res[n + 1] && res[n + 1].docs) || [],
-      tvs: (res[n + 2] && res[n + 2].length) ? res[n + 2] : [],
-      itunes: (res[n + 3] && res[n + 3].results) || []
-    };
+    /* 海外影视源（模糊命中，强相关） */
+    (res[n + 1] || []).forEach(function (it) {
+      var k = (it.title || "") + "|" + (it.link || "");
+      if (!seen[k]) { seen[k] = 1; it._score = 2; news.push(it); }
+    });
+    news.forEach(function (it) {
+      if (it._score === undefined) it._score = filmScore(it.title + " " + (it.description || ""));
+      it._hit = it._hit || 0;
+    });
+
+    function finalize() {
+      news.sort(function (a, b) {
+        if (b._score !== a._score) return b._score - a._score;
+        return (b._hit || 0) - (a._hit || 0);
+      });
+      return {
+        news: news,
+        related: news.filter(function (it) { return it._score >= 1; }),
+        broad: news.filter(function (it) { return it._score === 0; }),
+        books: (res[n + 2] && res[n + 2].docs) || [],
+        tvs: (res[n + 3] && res[n + 3].length) ? res[n + 3] : [],
+        itunes: (res[n + 4] && res[n + 4].results) || []
+      };
+    }
+
+    /* 防 0：完全无新闻时回退海外源全量最新 */
+    if (!news.length) {
+      return fetchOverseas("").then(function (all) {
+        all.forEach(function (it) {
+          var k = (it.title || "") + "|" + (it.link || "");
+          if (!seen[k]) { seen[k] = 1; it._score = 1; it._fallback = true; news.push(it); }
+        });
+        return finalize();
+      });
+    }
+    return finalize();
   });
 }
 
@@ -276,18 +314,55 @@ function renderNewsItems(list, limit) {
   }).join("");
 }
 
-/* 海外影视源抓取（经 rss2json 中转）：term 为空则返回全量，非空则按关键词过滤 */
+/* 国内新闻搜索源（Bing，中文，可直连/经 rss2json 中转） */
+function fetchBingNews(kw, limit) {
+  var q = encodeURIComponent(kw);
+  var rss = "https://www.bing.com/news/search?q=" + q + "&format=rss";
+  return fetch(rss2jsonUrl(rss), { mode: "cors" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) { return (d && d.items) || []; })
+    .catch(function () { return []; });
+}
+
+/* 模糊检索工具：分词 + 核心词命中 */
+var STOP_WORDS = ["的", "了", "和", "与", "在", "是", "也", "都", "及", "或", "对", "中", "为", "等", "于"];
+
+function fuzzyTokens(kw) {
+  var raw = String(kw || "").split(/[\s,，。、;；:：()（）·\-—_！!？?]+/);
+  var out = [], seen = {};
+  raw.forEach(function (w) {
+    w = w.trim();
+    if (!w || STOP_WORDS.indexOf(w) >= 0) return;
+    var key = w.toLowerCase();
+    if (seen[key]) return;
+    if (w.length >= 2 && !/^[a-z0-9]{1,2}$/i.test(w)) { out.push(w); seen[key] = 1; }
+    else if (/^[a-z]{3,}$/i.test(w)) { out.push(w); seen[key] = 1; }
+  });
+  return out.length ? out : [String(kw || "").trim()];
+}
+
+function fuzzyHit(text, tokens) {
+  var t = String(text || "").toLowerCase();
+  var hit = 0;
+  for (var i = 0; i < tokens.length; i++) {
+    var tk = String(tokens[i]).toLowerCase();
+    if (tk && t.indexOf(tk) >= 0) hit++;
+  }
+  return hit;
+}
+
+/* 海外影视源抓取（模糊检索：命中任一核心词即召回，记录命中数用于筛查） */
 function fetchOverseas(term) {
-  var t = (term || "").toLowerCase();
+  var tokens = term ? fuzzyTokens(term) : [];
   var srcs = PLATFORM.overseas || [];
   var ps = srcs.map(function (s) {
-    var url = "https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(s.rss);
+    var url = rss2jsonUrl(s.rss);
     return fetch(url, { mode: "cors" }).then(function (r) { return r.json(); }).then(function (d) {
       var out = [];
       ((d && d.items) || []).forEach(function (it) {
-        var title = it.title || "";
-        var desc = it.description || "";
-        if (t && title.toLowerCase().indexOf(t) < 0 && desc.toLowerCase().indexOf(t) < 0) return;
+        var hit = tokens.length ? fuzzyHit((it.title || "") + " " + (it.description || ""), tokens) : 1;
+        if (tokens.length && hit === 0) return; // 模糊召回：命中任一核心词才保留
+        it._hit = hit;
         it._src = s.name;
         out.push(it);
       });
@@ -357,7 +432,14 @@ function overviewAnalyze(topic) {
   st.className = "pill";
   box.innerHTML = '<div class="empty">正在联网抓取「' + esc(topic) + '」相关动态并交由 AI 分析…</div>';
 
-  fetchNewsFor(topic, 15).then(function (news) {
+  Promise.all([fetchNewsFor(topic, 15), fetchBingNews(topic + " 电影", 10)]).then(function (lists) {
+    var seen = {}, news = [];
+    (lists || []).forEach(function (list) {
+      (list || []).forEach(function (it) {
+        var k = (it.title || "") + "|" + (it.link || "");
+        if (!seen[k]) { seen[k] = 1; news.push(it); }
+      });
+    });
     st.textContent = "② 大模型分析中…";
     var newsBlock = news.length
       ? news.map(function (it) { return "- " + (it.title || "") + "（" + ((it.source && it.source.name) || "") + "，" + (it.pubDate || "").slice(0, 10) + "）"; }).join("\n")
@@ -660,7 +742,16 @@ function renderCollect() {
     '<span class="pill ' + (c.status === "online" ? "online" : "") + '">' + (c.status === "online" ? "● 已采集 " + (c.items || []).length + " 条" : "○ 预采集（研判走实时）") + '</span>' +
     '<span class="pill">' + esc(c.updated || "运行 python collector.py 更新") + '</span>' +
     '</div>' +
-    '<p style="font-size:13px;color:#5C5750;margin-top:10px">研判中心与总览看板已接入<b>实时联网抓取</b>（Google News 等），此处的 collector.py 预采集为可选的本地批量采集。</p></div>' +
+    '<p style="font-size:13px;color:#5C5750;margin-top:10px">研判中心与总览看板已接入<b>实时联网抓取</b>（Google News、Bing 国内源、海外影视源），此处的 collector.py 预采集为可选的本地批量采集。</p></div>' +
+
+    '<div class="section-title">中转服务 Key 设置（可选，强烈建议）</div>' +
+    '<div class="card" style="border-left:3px solid var(--ink-blue)">' +
+    '<p style="font-size:13px;color:#5C5750">实时抓取经 <b>rss2json.com</b> 中转。免费无 key 有请求限流（可能返回 0），注册<b>免费 API Key</b> 填入可大幅提升稳定性。</p>' +
+    '<p style="font-size:12px;color:#8A837A;margin-bottom:8px">获取方式：打开 rss2json.com → 点击 Get free API key → 用 Google 账号登录即得（免费）。</p>' +
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+    '<input id="rss-key" class="input" type="password" placeholder="rss2json API Key（可选）" value="' + esc(getRssKey()) + '" style="max-width:340px">' +
+    '<button id="btn-rss-key" class="btn">保存 Key</button><span id="rss-key-msg" class="meta-info"></span>' +
+    '</div></div>' +
 
     '<div class="section-title">实时联网抓取</div>' +
     '<div class="card"><p style="font-size:13px;color:#5C5750">点击按钮，平台经 rss2json.com 服务器中转实时抓取 The Guardian 电影频道最新影评。</p>' +
@@ -672,6 +763,11 @@ function renderCollect() {
     '<button id="btn-overseas" class="btn">抓取海外影视源</button>' +
     '<div id="overseas-box" class="empty">尚未抓取。</div></div>' +
 
+    '<div class="section-title">国内新闻源实时抓取</div>' +
+    '<div class="card"><p style="font-size:13px;color:#5C5750">点击按钮，抓取 Bing 中文新闻关于「电影 影视 票房」的国内最新动态。</p>' +
+    '<button id="btn-domestic" class="btn">抓取国内新闻源</button>' +
+    '<div id="domestic-box" class="empty">尚未抓取。</div></div>' +
+
     '<div class="section-title">最新采集条目</div>' +
     '<div class="card">' + items + '</div>' +
 
@@ -682,6 +778,25 @@ function renderCollect() {
   if (btn) btn.addEventListener("click", liveFetch);
   var obtn = document.getElementById("btn-overseas");
   if (obtn) obtn.addEventListener("click", overseasFetch);
+  var dbtn = document.getElementById("btn-domestic");
+  if (dbtn) dbtn.addEventListener("click", domesticFetch);
+  var rk = document.getElementById("btn-rss-key");
+  if (rk) rk.addEventListener("click", function () {
+    var v = document.getElementById("rss-key").value.trim();
+    try { localStorage.setItem("rss2json_key", v); } catch (e) {}
+    document.getElementById("rss-key-msg").textContent = v ? "已保存 ✓" : "已清除";
+  });
+}
+
+function domesticFetch() {
+  var box = document.getElementById("domestic-box");
+  if (!box) return;
+  box.className = "empty";
+  box.textContent = "正在抓取国内新闻源…";
+  fetchBingNews("电影 影视 票房", 15).then(function (list) {
+    if (!list.length) { box.textContent = "未抓取到数据（接口限流或网络问题）。"; return; }
+    box.innerHTML = renderNewsItems(list, 12);
+  }).catch(function () { box.textContent = "抓取失败，请稍后再试。"; });
 }
 
 function overseasFetch() {

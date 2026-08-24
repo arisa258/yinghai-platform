@@ -50,6 +50,7 @@ var PLATFORM = {
 
   /* 数据源清单（实时采集相关） */
   sources: [
+    { name: "Bing 新闻", region: "中国/全球", type: "国内新闻搜索", reach: "可直连" },
     { name: "Google News", region: "全球", type: "新闻聚合·广域搜索", reach: "可直连" },
     { name: "The Guardian · Film", region: "英国", type: "海外专业媒体", reach: "rss2json 中转" },
     { name: "BBC · 娱乐与文化", region: "英国", type: "海外主流媒体", reach: "rss2json 中转" },
