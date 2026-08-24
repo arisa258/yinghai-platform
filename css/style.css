@@ -358,6 +358,13 @@ table.data tbody tr:nth-child(even) { background: #FAF7F1; }
 .item-line { padding: 7px 0; border-bottom: 1px dashed var(--hairline); font-size: 13px; }
 .item-line:last-child { border-bottom: none; }
 
+/* AI 结论分条 */
+.concl-list { list-style: none; }
+.concl-item { padding: 12px 0 14px; border-bottom: 1px dashed var(--hairline); }
+.concl-item:last-child { border-bottom: none; }
+.concl-item b { font-family: var(--font-serif); font-size: 15px; color: var(--ink); display: block; margin-bottom: 5px; }
+.concl-item p { font-size: 14px; color: #5C5750; line-height: 1.9; margin: 0; }
+
 .empty { color: var(--ink-3); font-size: 13px; padding: 12px 0; }
 
 /* ─────────────── 响应式 ─────────────── */

@@ -575,7 +575,14 @@ function analyzeWork(kw) {
       "你是「映海御安阁」中国电影海外舆情与文化安全研判平台的分析引擎。",
       "请对「" + kw + "」进行舆情研判，**只输出一个 JSON 对象**（不要 markdown 代码块），字段：",
       "{",
-      "  \"conclusion\": [\"研判结论1\",\"研判结论2\",\"研判结论3\"],",
+      "  \"conclusion\": \"一段250字以上的综合研判长文（覆盖：舆情总体态势、正面表现、核心风险、趋势走向、对行业与传播的启示，条理清晰、内容详实）\",",
+      "  \"conclusions\": [",
+      "    {\"title\": \"核心态势\", \"detail\": \"120字以上详述\"},",
+      "    {\"title\": \"正面表现\", \"detail\": \"120字以上详述\"},",
+      "    {\"title\": \"风险警示\", \"detail\": \"120字以上详述\"},",
+      "    {\"title\": \"趋势研判\", \"detail\": \"120字以上详述\"},",
+      "    {\"title\": \"对策启示\", \"detail\": \"120字以上详述\"}",
+      "  ],",
       "  \"dims\": {\"触发强度\":0,\"对象敏感\":0,\"历史存量\":0,\"传播可切片\":0,\"现实后果\":0},",
       "  \"score\": 0,",
       "  \"level\": \"低|中|高\",",
@@ -667,7 +674,22 @@ function renderAnalyzeResult(box, st, kw, text, data, spec) {
     '<div class="ratio-seg" style="width:' + net + '%;background:#8A837A"></div>' +
     '<div class="ratio-seg" style="width:' + (o.riskRatio || 0) + '%;background:#A63A2B">风险 ' + (o.riskRatio || 0) + '%</div>' +
     '</div>';
-  var concl = (o.conclusion || []).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join("");
+  /* AI 结论渲染：综合长文 + 分条详述（兼容新旧格式） */
+  var conclLong = "";
+  if (typeof o.conclusion === "string" && o.conclusion) conclLong = esc(o.conclusion);
+  else if (Array.isArray(o.conclusion) && o.conclusion.length) conclLong = esc(o.conclusion.join("；"));
+  var conclItems = "";
+  if (o.conclusions && o.conclusions.length) {
+    conclItems = o.conclusions.map(function (c) {
+      return '<li class="concl-item"><b>' + esc(c.title || "研判") + '</b><p>' + esc(c.detail || c.text || "") + '</p></li>';
+    }).join("");
+  } else if (Array.isArray(o.conclusion) && o.conclusion.length) {
+    conclItems = o.conclusion.map(function (c) {
+      return '<li class="concl-item"><p>' + esc(c) + '</p></li>';
+    }).join("");
+  }
+  var conclHtml = (conclLong ? '<div class="card" style="margin-bottom:12px"><h3>综合研判</h3><p style="font-size:14px;color:#5C5750;line-height:2">' + conclLong + '</p></div>' : '') +
+    (conclItems ? '<div class="card"><ul class="step-list concl-list">' + conclItems + '</ul></div>' : '');
   var tags = (o.topicTags || []).map(function (t) { return '<span class="badge low" style="margin-right:6px;color:#274A64;border-color:#274A64">' + esc(t) + '</span>'; }).join("");
   var advice = (o.advice || []).map(function (a, i) { return '<li><b>0' + (i + 1) + '</b>　' + esc(a) + '</li>'; }).join("");
 
@@ -692,7 +714,7 @@ function renderAnalyzeResult(box, st, kw, text, data, spec) {
     '<div class="section-title">八大监测指标触发状态</div>' +
     '<div class="card"><div class="table-wrap"><table class="data"><thead><tr><th style="width:120px">指标</th><th>定义</th><th style="width:80px">状态</th></tr></thead><tbody>' + alertRows + '</tbody></table></div></div>' +
 
-    '<div class="section-title">AI 研判结论</div><div class="card"><ol class="step-list">' + concl + '</ol></div>' +
+    '<div class="section-title">AI 研判结论</div>' + conclHtml +
     '<div class="section-title">处置建议（可参考处置工具中的 RACI 规则）</div><div class="card"><ul class="step-list">' + advice + '</ul></div>' +
 
     '<div class="section-title">实时检索结果（影视相关优先）</div>' +
