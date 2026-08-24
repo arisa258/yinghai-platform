@@ -23,6 +23,7 @@ var TITLES = {
   "/events": "事件工作台",
   "/monitor": "监测预警",
   "/live": "实时监测",
+  "/search": "自由检索",
   "/collect": "数据采集"
 };
 
@@ -460,12 +461,102 @@ function liveFetchFilm(f, ld) {
     });
 }
 
+/* ---------- 视图 7：自由检索（广域信息收集） ---------- */
+function renderSearch() {
+  $view.innerHTML =
+    '<div class="section-title">作品自由检索 · 广域信息收集</div>' +
+    '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+    '<input id="search-input" class="input" type="text" placeholder="输入任意作品 / 主题，如：中国电影、功夫、新海诚…">' +
+    '<button id="btn-search" class="btn">全网检索</button>' +
+    '</div>' +
+    '<div id="search-result"><div class="empty" style="padding:20px 0">输入关键词，点击「全网检索」，平台将聚合 Google 新闻、Open Library 图书、TVMaze 影视等免费公开源进行广域收集，不局限于影视作品。</div></div>';
+
+  var input = document.getElementById("search-input");
+  var btn = document.getElementById("btn-search");
+  function go() { searchAll(input.value.trim()); }
+  btn.addEventListener("click", go);
+  input.addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+  input.focus();
+}
+
+function searchAll(kw) {
+  var box = document.getElementById("search-result");
+  if (!kw) { box.innerHTML = '<div class="empty">请输入关键词。</div>'; return; }
+  box.innerHTML = '<div class="empty">正在广域检索「' + esc(kw) + '」…</div>';
+
+  var q = encodeURIComponent(kw);
+  var newsUrl = "https://api.rss2json.com/v1/api.json?rss_url=" +
+    encodeURIComponent("https://news.google.com/rss/search?q=" + q + "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans");
+  var bookUrl = "https://openlibrary.org/search.json?q=" + q + "&limit=6";
+  var enKw = kw.replace(/[^\x00-\x7F]/g, " ").trim() || kw;
+  var tvUrl = "https://api.tvmaze.com/search/shows?q=" + encodeURIComponent(enKw) + "&limit=6";
+
+  Promise.all([
+    fetch(newsUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
+    fetch(bookUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
+    fetch(tvUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; })
+  ]).then(function (res) {
+    var news = res[0], books = res[1], tvs = res[2];
+
+    var html = "";
+
+    /* 新闻速览 */
+    var newsItems = (news && news.items) || [];
+    html += '<div class="section-title">新闻速览（Google 新闻 · 广域）</div><div class="card">';
+    if (newsItems.length) {
+      html += newsItems.slice(0, 10).map(function (it) {
+        var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
+        var src = (it.source && it.source.name) ? it.source.name : "";
+        return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc(src) + ')</span>' + link + '</div>';
+      }).join("");
+    } else {
+      html += '<div class="empty">未获取到相关新闻，可更换关键词或稍后重试。</div>';
+    }
+    html += '</div>';
+
+    /* 图书资料 */
+    var bookList = (books && books.docs) || [];
+    html += '<div class="section-title">图书 / 百科资料（Open Library）</div><div class="card">';
+    if (bookList.length) {
+      html += bookList.slice(0, 6).map(function (b) {
+        var authors = (b.author_name || []).slice(0, 2).join("、");
+        var yr = b.first_publish_year || "";
+        return '<div class="item-line"><b>' + esc(b.title) + '</b> <span style="color:#8A837A">(' + esc(authors) + ' · ' + esc(yr) + ')</span></div>';
+      }).join("");
+    } else {
+      html += '<div class="empty">未匹配到图书资料。</div>';
+    }
+    html += '</div>';
+
+    /* 影视档案 */
+    var tvList = tvs && tvs.length ? tvs : [];
+    html += '<div class="section-title">影视档案（TVMaze）</div><div class="card">';
+    if (tvList.length) {
+      html += tvList.slice(0, 6).map(function (t) {
+        var s = t.show || {};
+        var meta = [s.type, s.language, (s.premiered || "").slice(0, 4), s.rating && s.rating.average ? "评分 " + s.rating.average : ""].filter(Boolean).join(" · ");
+        var link = s.url ? ' <a href="' + esc(s.url) + '" target="_blank" rel="noopener" style="color:#274A64">详情 ↗</a>' : "";
+        return '<div class="item-line"><b>' + esc(s.name || "") + '</b> <span style="color:#8A837A">(' + esc(meta) + ')</span>' + link + '</div>';
+      }).join("");
+    } else {
+      html += '<div class="empty">未匹配到影视条目（可尝试英文关键词，如 "kung fu"）。</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="section-title">数据来源说明</div>' +
+      '<div class="card"><p style="font-size:12px;color:#8A837A;margin:0">检索经 rss2json.com 服务器中转与各公开 API 完成，免费、无密钥；网络受限时部分源可能返回为空，不影响其他源展示。</p></div>';
+
+    box.innerHTML = html;
+  });
+}
+
 var VIEWS = {
   "/overview": renderOverview,
   "/films": renderFilms,
   "/events": renderEvents,
   "/monitor": renderMonitor,
   "/live": renderLive,
+  "/search": renderSearch,
   "/collect": renderCollect
 };
 
