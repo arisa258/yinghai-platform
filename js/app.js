@@ -652,28 +652,57 @@ function analyzeWork(kw) {
   });
 }
 function analyzeRawBlock(data, spec) {
-  return specBlock(spec) +
+  return methodBlock() +
     '<div class="section-title">实时检索结果（命中「' + esc(data.kw || "") + '」优先）</div>' +
     '<div class="card">' + renderNewsItems(data.related, 10) +
     (data.weak && data.weak.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.weak.length + ' 条疑似泛化内容（未直接提及作品，仅供参考）</div>' : '') +
     (data.unrelatedCount ? '<div class="empty" style="padding-top:4px">已过滤 ' + data.unrelatedCount + ' 条与作品无关的同名/泛化条目</div>' : '') + '</div>';
 }
 
-function specBlock(spec) {
-  var dist = (spec.sourceDist || []).map(function (s) {
-    var pct = spec.reportCount ? Math.round(s.count / spec.reportCount * 100) : 0;
-    return '<div class="dim-row"><span class="dim-label">' + esc(s.name) + '</span>' +
-      '<div class="dim-track"><div class="dim-fill" style="width:' + pct + '%;background:#274A64"></div></div>' +
-      '<span style="flex:0 0 40px;font-size:12px;color:#8A837A">' + s.count + '</span></div>';
+/* 研判模型 · 平台标准框架（纯静态，离线可靠；替代数据规格栏） */
+var DIM_DEFS = {
+  "触发强度": "事件引发舆情的势能",
+  "对象敏感": "涉及主体与议题的敏感度",
+  "历史存量": "历史积怨与刻板印象储备",
+  "传播可切片": "内容被切割、放大的可能",
+  "现实后果": "向排片、票房、品牌与秩序转化"
+};
+
+function methodBlock() {
+  var d = PLATFORM;
+  var cn = ["一", "二", "三", "四", "五"];
+  var dimRows = d.dims.map(function (k, i) {
+    return '<li><span class="arch-no">' + cn[i] + '</span>' +
+      '<div><div class="arch-name">' + esc(k) + '</div><div class="arch-desc">' + esc(DIM_DEFS[k] || "") + '</div></div></li>';
   }).join("");
-  return '<div class="section-title">数据规格</div>' +
-    '<div class="grid grid-4" style="margin-bottom:12px">' +
-    '<div class="kpi-card"><span class="num">' + spec.reportCount + '</span><span class="lab">实时报道数</span></div>' +
-    '<div class="kpi-card"><span class="num">' + spec.sourceCount + '</span><span class="lab">来源数</span></div>' +
-    '<div class="kpi-card"><span class="num" style="font-size:22px">' + esc(spec.timeSpan) + '</span><span class="lab">时间跨度</span></div>' +
-    '<div class="kpi-card"><span class="num">' + (spec.dateDist || []).length + '</span><span class="lab">近端天数</span></div>' +
+  var types = d.sentimentTypes.map(function (t) {
+    return '<span class="badge high" style="margin:0 6px 6px 0">' + esc(t) + '</span>';
+  }).join("");
+  var raciRows = d.dispatching.raci.map(function (r) {
+    var cls = r.role.indexOf("A") === 0 ? "raci-a" : (r.role.indexOf("R") === 0 ? "raci-r" : (r.role.indexOf("C") === 0 ? "raci-c" : "raci-i"));
+    return '<div style="display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px dashed var(--hairline);font-size:13px">' +
+      '<span class="' + cls + '" style="flex:0 0 128px">' + esc(r.role) + '</span>' +
+      '<span style="flex:1;color:var(--ink-2)">' + esc(r.desc) + ' · ' + esc(r.who) + '</span>' +
+      '<span style="color:var(--ink-3);font-size:11px">' + esc(r.note) + '</span></div>';
+  }).join("");
+  var indChips = d.indicators.map(function (ind) {
+    return '<div style="background:#F6F2EA;border-left:3px solid var(--ink-blue);border-radius:0 4px 4px 0;padding:9px 11px">' +
+      '<div style="font-size:12px;font-weight:600;color:var(--ink)">' + esc(ind.name) + '</div>' +
+      '<div style="font-size:11px;color:var(--ink-3);margin-top:2px;line-height:1.6">' + esc(ind.threshold) + '</div></div>';
+  }).join("");
+  return '<div class="section-title">研判模型 · 平台标准框架</div>' +
+    '<div class="card" style="border-top:3px solid var(--cinnabar)">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;margin-bottom:14px">' +
+    '<div class="report-title" style="font-size:15px">映海研判框架</div>' +
+    '<span class="pill">五维风险 · 四类舆情 · RACI · 八项监测</span></div>' +
+    '<div class="grid grid-2">' +
+    '<div><h4 style="margin-bottom:6px">五维风险模型</h4><ul class="arch-list">' + dimRows + '</ul></div>' +
+    '<div><h4 style="margin-bottom:6px">四类主导舆情</h4><div style="margin-bottom:14px">' + types + '</div>' +
+    '<h4 style="margin-bottom:6px">RACI 决策规则</h4>' + raciRows + '</div>' +
     '</div>' +
-    '<div class="card" style="margin-bottom:12px"><h4>来源分布（Top）</h4>' + (dist || '<div class="empty">无</div>') + '</div>';
+    '<h4 style="margin-top:18px">八大监测指标 · 预警阈值</h4>' +
+    '<div class="grid grid-4" style="gap:10px;margin-top:8px">' + indChips + '</div>' +
+    '</div>';
 }
 
 function renderAnalyzeResult(box, st, kw, text, data, spec) {
@@ -734,7 +763,7 @@ function renderAnalyzeResult(box, st, kw, text, data, spec) {
     '<div class="kpi-card"><span class="num" style="color:' + (o.level === "高" ? "#A63A2B" : "#3E7A55") + '">' + esc(o.level || "-") + '</span><span class="lab">AI 风险等级</span></div>' +
     '</div>' +
 
-    specBlock(spec) +
+    methodBlock() +
 
     '<div class="section-title">AI 量化研判</div>' +
     '<div class="grid grid-2">' +
