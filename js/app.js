@@ -219,6 +219,20 @@ function fetchNewsFor(kw, limit) {
     .catch(function () { return []; });
 }
 
+/* 英文 Google News（国际报道源，扩大国际覆盖面；仅当关键词含英文时使用） */
+function fetchNewsForEn(kw, limit) {
+  var q = encodeURIComponent(kw);
+  var rss = "https://news.google.com/rss/search?q=" + q + "&hl=en-US&gl=US&ceid=US:en";
+  return fetch(rss2jsonUrl(rss), { mode: "cors" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var arr = (d && d.items) || [];
+      arr.forEach(function (it) { if (!it._feed) it._feed = "Google News（国际）"; });
+      return arr;
+    })
+    .catch(function () { return []; });
+}
+
 /* 影视领域关键词：用于相关性打分，过滤无关内容 */
 var FILM_WORDS = ["电影", "影视", "影片", "影院", "票房", "上映", "剧集", "电视剧", "动漫", "动画", "导演", "演员", "影评", "院线", "续集", "首映", "观影", "预告", "角色", "编剧", "film", "movie", "cinema", "series", "anime", "animation", "tv show", "screening", "box office", "episode", "season"];
 
@@ -229,7 +243,11 @@ function filmScore(text) {
   return n;
 }
 
-/* 广域检索（多关键词 × 多源，扩大搜索量；影视相关性排序） */
+/* 广域检索（多关键词 × 国内+国际多源，扩大搜索量；影视相关性排序）
+   数据口径：
+   - news/related/broad：关键词直接命中的报道（国内中文源 + 国际英文源）
+   - intl：海外影视源最新全量，作为「国际影视动态」背景参考（与主题可能无关）
+   - focus：规格与报告的数据基准（影视相关优先） */
 function searchWeb(kw) {
   var enKw = kw.replace(/[^\x00-\x7F]/g, " ").trim() || kw;
   var queries = [kw, kw + " 电影 影视 票房", kw + " 动漫 动画", enKw];
@@ -241,20 +259,25 @@ function searchWeb(kw) {
 
   var newsPromises = qs.map(function (qq) { return fetchNewsFor(qq, 12); });
   var bingPromise = fetchBingNews(kw);
-  var overseasPromise = fetchOverseas(enKw);
+  /* 英文 Google News（国际报道，避免全部扎堆中文源） */
+  var enGNewsPromise = (enKw && enKw !== kw) ? fetchNewsForEn(enKw) : Promise.resolve([]);
+  /* 海外影视源全量最新 → 国际影视动态（上下文参考） */
+  var overseasLatestPromise = fetchOverseas("");
   var bookUrl = "https://openlibrary.org/search.json?q=" + encodeURIComponent(kw) + "&limit=5";
   var tvUrl = "https://api.tvmaze.com/search/shows?q=" + encodeURIComponent(enKw) + "&limit=6";
   var itUrl = "https://itunes.apple.com/search?term=" + encodeURIComponent(enKw) + "&media=movie&entity=tvShow,movie&limit=6";
 
   return Promise.all(newsPromises.concat([
     bingPromise,
-    overseasPromise,
+    enGNewsPromise,
+    overseasLatestPromise,
     fetch(bookUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch(tvUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch(itUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; })
   ])).then(function (res) {
     var n = qs.length;
-    var seen = {}, news = [];
+    var seen = {}, news = [], intl = [], seenIntl = {};
+    /* 中文 Google News（国内报道） */
     for (var i = 0; i < n; i++) {
       (res[i] || []).forEach(function (it) {
         var k = (it.title || "") + "|" + (it.link || "");
@@ -266,42 +289,54 @@ function searchWeb(kw) {
       var k = (it.title || "") + "|" + (it.link || "");
       if (!seen[k]) { seen[k] = 1; it._score = 2; news.push(it); }
     });
-    /* 海外影视源（模糊命中，强相关） */
+    /* 英文 Google News（国际报道，强相关） */
     (res[n + 1] || []).forEach(function (it) {
       var k = (it.title || "") + "|" + (it.link || "");
       if (!seen[k]) { seen[k] = 1; it._score = 2; news.push(it); }
+    });
+    /* 海外影视源全量最新 → 国际影视动态（背景参考，非主题相关） */
+    (res[n + 2] || []).forEach(function (it) {
+      var k = (it.title || "") + "|" + (it.link || "");
+      if (!seenIntl[k]) { seenIntl[k] = 1; it._intl = true; it._score = 0; intl.push(it); }
     });
     news.forEach(function (it) {
       if (it._score === undefined) it._score = filmScore(it.title + " " + (it.description || ""));
       it._hit = it._hit || 0;
     });
 
-    function finalize() {
-      news.sort(function (a, b) {
-        if (b._score !== a._score) return b._score - a._score;
-        return (b._hit || 0) - (a._hit || 0);
-      });
-      return {
-        news: news,
-        related: news.filter(function (it) { return it._score >= 1; }),
-        broad: news.filter(function (it) { return it._score === 0; }),
-        books: (res[n + 2] && res[n + 2].docs) || [],
-        tvs: (res[n + 3] && res[n + 3].length) ? res[n + 3] : [],
-        itunes: (res[n + 4] && res[n + 4].results) || []
-      };
+    news.sort(function (a, b) {
+      if (b._score !== a._score) return b._score - a._score;
+      return (b._hit || 0) - (a._hit || 0);
+    });
+    var related = news.filter(function (it) { return it._score >= 1; });
+    var broad = news.filter(function (it) { return it._score === 0; });
+
+    /* 作品上线时间：优先 iTunes releaseDate，其次 TVMaze premiered */
+    var releaseDate = "";
+    var itRes = (res[n + 5] && res[n + 5].results) || [];
+    for (var a = 0; a < itRes.length; a++) {
+      var rd = normDate(itRes[a].releaseDate);
+      if (rd) { releaseDate = rd; break; }
+    }
+    if (!releaseDate) {
+      var tvRes = (res[n + 4] && res[n + 4].length) ? res[n + 4] : [];
+      for (var b = 0; b < tvRes.length; b++) {
+        var pd = tvRes[b].show ? normDate(tvRes[b].show.premiered) : "";
+        if (pd) { releaseDate = pd; break; }
+      }
     }
 
-    /* 防 0：完全无新闻时回退海外源全量最新 */
-    if (!news.length) {
-      return fetchOverseas("").then(function (all) {
-        all.forEach(function (it) {
-          var k = (it.title || "") + "|" + (it.link || "");
-          if (!seen[k]) { seen[k] = 1; it._score = 1; it._fallback = true; news.push(it); }
-        });
-        return finalize();
-      });
-    }
-    return finalize();
+    return {
+      news: news,
+      related: related,
+      broad: broad,
+      intl: intl.slice(0, 15),
+      focus: (related.length ? related : news),
+      releaseDate: releaseDate,
+      books: (res[n + 3] && res[n + 3].docs) || [],
+      tvs: (res[n + 4] && res[n + 4].length) ? res[n + 4] : [],
+      itunes: (res[n + 5] && res[n + 5].results) || []
+    };
   });
 }
 
@@ -398,6 +433,12 @@ function itemSource(it) {
 
 function pad2(n) { return ("0" + n).slice(-2); }
 
+/* 今天（YYYY-MM-DD，本地日期） */
+function todayStr() {
+  var d = new Date();
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+}
+
 /* 稳健日期 → YYYY-MM-DD（兼容 ISO / 空格 / RFC822 等格式） */
 function normDate(pubDate) {
   var s = String(pubDate || "").trim();
@@ -411,8 +452,9 @@ function normDate(pubDate) {
   return "";
 }
 
-/* 新闻数据规格化 */
-function normalizeNews(news) {
+/* 新闻数据规格化；opts.releaseDate 为作品上线时间，时间跨度取「上线至今」 */
+function normalizeNews(news, opts) {
+  opts = opts || {};
   var srcCount = {}, byDate = {};
   news.forEach(function (it) {
     var s = itemSource(it);
@@ -423,21 +465,34 @@ function normalizeNews(news) {
   var dist = Object.keys(srcCount).sort(function (a, b) { return srcCount[b] - srcCount[a]; })
     .slice(0, 5).map(function (s) { return { name: s, count: srcCount[s] }; });
   var dates = Object.keys(byDate).sort();
-  /* 收窄到最近 30 天窗口，避免搜索源混入陈旧条目导致「时间跨度」失真 */
-  var maxDate = dates.length ? dates[dates.length - 1] : "";
-  var winStart = "";
-  if (maxDate) {
-    var md = new Date(maxDate.replace(/-/g, "/"));
-    md.setDate(md.getDate() - 30);
-    winStart = md.getFullYear() + "-" + pad2(md.getMonth() + 1) + "-" + pad2(md.getDate());
+  var today = todayStr();
+
+  /* 起点：优先作品上线时间；异常值（未来 / 早于2年前）回退到最早相关报道 */
+  var start = "";
+  var rel = normDate(opts.releaseDate);
+  var earliest = dates.length ? dates[0] : "";
+  if (rel) {
+    var relT = new Date(rel.replace(/-/g, "/")).getTime();
+    var todayT = new Date(today.replace(/-/g, "/")).getTime();
+    var maxBack = new Date(today.replace(/-/g, "/"));
+    maxBack.setFullYear(maxBack.getFullYear() - 2);
+    if (!isNaN(relT) && relT <= todayT && relT >= maxBack.getTime()) start = rel;
   }
-  var winDates = dates.filter(function (d) { return !winStart || d >= winStart; });
+  if (!start) start = earliest;
+
+  /* 终点：至今；未上映 / 无数据时退回报道窗口 */
+  var end = today;
+  if (!start || start > end) {
+    start = earliest;
+    end = dates.length ? dates[dates.length - 1] : today;
+  }
   return {
     reportCount: news.length,
     sourceCount: Object.keys(srcCount).length,
-    timeSpan: winDates.length ? (winDates[0] + " 至 " + winDates[winDates.length - 1]) : (dates.length ? (dates[0] + " 至 " + dates[dates.length - 1]) : "—"),
+    releaseDate: rel || "",
+    timeSpan: (start && end) ? (start + " 至 " + end) : "—",
     sourceDist: dist,
-    dateDist: winDates.slice(-7).map(function (d) { return { date: d, count: byDate[d] }; })
+    dateDist: dates.slice(-7).map(function (d) { return { date: d, count: byDate[d] }; })
   };
 }
 
@@ -595,12 +650,19 @@ function analyzeWork(kw) {
 
   searchWeb(kw).then(function (data) {
     st.textContent = "② AI 研判中…";
-    var spec = normalizeNews(data.news);
-    var newsBlock = data.news.length
-      ? data.news.map(function (it) {
-          return "- " + (it.title || "") + "（" + itemSource(it) + "，" + normDate(it.pubDate) + "）" + (it._score >= 1 ? " ✓影视相关" : " ○疑似泛化");
+    var spec = normalizeNews(data.focus, { releaseDate: data.releaseDate });
+    var focus = data.focus || [];
+    var newsBlock = focus.length
+      ? focus.map(function (it) {
+          return "- " + (it.title || "") + "（" + itemSource(it) + "，" + normDate(it.pubDate) + "）";
         }).join("\n")
-      : "（未抓到实时新闻）";
+      : "（未检索到直接相关的报道）";
+    var intlBlock = (data.intl && data.intl.length)
+      ? "\n\n--- 国际影视动态（海外主流影视媒体最新，可能与研究对象无直接关联，仅作国际背景参考）---\n" +
+        data.intl.slice(0, 8).map(function (it) {
+          return "- " + (it.title || "") + "（" + itemSource(it) + "，" + normDate(it.pubDate) + "）";
+        }).join("\n")
+      : "";
 
     var prompt = [
       "你是「映海御安阁」中国电影海外舆情与文化安全研判平台的分析引擎。",
@@ -631,11 +693,12 @@ function analyzeWork(kw) {
       "- 四类主导舆情：文化认同与政策型 / 邻国形象与刻板印象型 / 事实伦理与制度型 / 专业工艺与类型片型",
       "- 八大监测指标（alerts 请根据资料判断哪些已触发）：议题迁移、主体升级、跨语言扩散、标签固化、现实转化、回应接受度、服务损害、合作方风险",
       "- RACI 决策：A=最终拍板 R=直接执行 C=必须会签 I=知会",
-      "实时抓取到的新闻资料（标注 ○疑似泛化 的条目多为同名无关内容，请忽略，只基于影视相关内容研判）：",
+      "实时抓取到的与「" + kw + "」直接相关的新闻资料：",
       "---",
       newsBlock,
-      "---",
-      "请基于以上资料给出客观、量化的研判。"
+      "---" + intlBlock,
+      "",
+      "请基于以上资料给出客观、量化的研判；国际影视动态仅作背景参考，不要当作该作品本身的舆情。"
     ].join("\n");
 
     callLLM([{ role: "user", content: prompt }]).then(function (text) {
@@ -650,11 +713,20 @@ function analyzeWork(kw) {
   });
 }
 
+/* 国际影视动态（海外源最新，背景参考，非主题相关） */
+function intlSection(list) {
+  if (!list || !list.length) return "";
+  return '<div class="section-title">国际影视动态（最新 · 供参考）</div>' +
+    '<div class="card"><p style="font-size:12px;color:#8A837A;margin-bottom:6px">以下为海外主流影视媒体的最新动态，作为国际背景参考，可能与研究对象无直接关联。</p>' +
+    renderNewsItems(list, 8) + '</div>';
+}
+
 function analyzeRawBlock(data, spec) {
   return specBlock(spec) +
     '<div class="section-title">实时检索结果（影视相关优先）</div>' +
     '<div class="card">' + renderNewsItems(data.related, 10) +
-    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（已过滤展示）</div>' : '') + '</div>';
+    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（已过滤展示）</div>' : '') + '</div>' +
+    intlSection(data.intl);
 }
 
 function specBlock(spec) {
@@ -750,7 +822,9 @@ function renderAnalyzeResult(box, st, kw, text, data, spec) {
 
     '<div class="section-title">实时检索结果（影视相关优先）</div>' +
     '<div class="card">' + renderNewsItems(data.related, 10) +
-    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（与影视无关，已过滤展示）</div>' : '') + '</div>';
+    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（与影视无关，已过滤展示）</div>' : '') + '</div>' +
+
+    intlSection(data.intl);
 
   st.textContent = "完成：研判已生成";
   st.className = "pill online";

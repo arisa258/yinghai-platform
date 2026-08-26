@@ -95,7 +95,8 @@ function assembleReportContent(kw, o, data, spec) {
   var advice = (o.advice || []).map(function (a) { return String(a); });
   if (!advice.length) advice.push("（AI 未生成处置建议，建议结合「处置工具」页的决策规则人工拟定。）");
 
-  var news = (data && data.news) || [];
+  var news = (data && (data.focus || data.news)) || [];
+  var intlNews = (data && data.intl) || [];
   function toRef(it) {
     return {
       title: it.title || "（无标题）",
@@ -106,6 +107,7 @@ function assembleReportContent(kw, o, data, spec) {
   }
   var refs = news.slice(0, 12).map(toRef);
   var appendix = news.slice(0, 30).map(toRef);
+  var appendixIntl = intlNews.slice(0, 15).map(toRef);
 
   var sourceDist = (spec.sourceDist || []).map(function (s) {
     return { name: s.name, count: s.count, pct: spec.reportCount ? Math.round(s.count / spec.reportCount * 100) : 0 };
@@ -130,6 +132,7 @@ function assembleReportContent(kw, o, data, spec) {
       reportCount: spec.reportCount || 0,
       sourceCount: spec.sourceCount || 0,
       timeSpan: spec.timeSpan || "—",
+      releaseDate: spec.releaseDate || "",
       narrative: situationTxt
     },
     positives: positives,
@@ -143,7 +146,8 @@ function assembleReportContent(kw, o, data, spec) {
     trend: trend,
     advice: advice,
     refs: refs,
-    appendix: appendix
+    appendix: appendix,
+    appendixIntl: appendixIntl
   };
 }
 
@@ -236,6 +240,7 @@ function reportBodyHTML(c) {
 
     '<h2>一、总体情况</h2>' +
     kpis +
+    (c.overview.releaseDate ? '<p><b>作品上线时间：</b>' + esc(c.overview.releaseDate) + '</p>' : '') +
     '<p><b>舆情类型：</b>' + esc(c.overview.type) + '</p>' +
     tagHTML +
     '<p>本次研判共捕获实时报道 <b>' + c.overview.reportCount + '</b> 条，来自 <b>' + c.overview.sourceCount + '</b> 个来源，时间跨度 <b>' + esc(c.overview.timeSpan) + '</b>。</p>' +
@@ -265,7 +270,10 @@ function reportBodyHTML(c) {
     '<ol>' + refsList(c.refs, "（本次研判未抓取到实时参考来源，建议人工补充。）") + '</ol>' +
 
     '<h2>附录：完整实时检索条目</h2>' +
-    '<ol>' + refsList(c.appendix, "（无）") + '</ol>'
+    '<ol>' + refsList(c.appendix, "（无）") + '</ol>' +
+    (c.appendixIntl && c.appendixIntl.length
+      ? '<h3>国际影视动态（海外源最新 · 供参考）</h3><ol>' + refsList(c.appendixIntl, "（无）") + '</ol>'
+      : '')
   );
 }
 
@@ -319,6 +327,7 @@ function reportToMarkdown(c) {
   L.push("- 风险占比：" + c.overview.riskRatio + "%");
   L.push("- 风险等级：" + c.overview.level);
   L.push("- 五维总分：" + c.overview.score + " / 25");
+  if (c.overview.releaseDate) L.push("- 作品上线时间：" + c.overview.releaseDate);
   L.push("- 舆情类型：" + c.overview.type);
   if (c.overview.tags.length) L.push("- 议题标签：" + c.overview.tags.join("、"));
   L.push("- 数据规格：实时报道 " + c.overview.reportCount + " 条 / 来源 " + c.overview.sourceCount + " 个 / 时间跨度 " + c.overview.timeSpan);
@@ -358,6 +367,13 @@ function reportToMarkdown(c) {
   c.appendix.forEach(function (r, i) {
     L.push("[" + (i + 1) + "] " + r.title + " — " + r.src + (r.date ? " · " + r.date : "") + (r.link ? "（" + r.link + "）" : ""));
   });
+  if (c.appendixIntl && c.appendixIntl.length) {
+    L.push("");
+    L.push("### 国际影视动态（海外源最新 · 供参考）");
+    c.appendixIntl.forEach(function (r, i) {
+      L.push("[" + (i + 1) + "] " + r.title + " — " + r.src + (r.date ? " · " + r.date : "") + (r.link ? "（" + r.link + "）" : ""));
+    });
+  }
   return L.join("\n");
 }
 
@@ -384,7 +400,7 @@ function enhanceReport() {
   st.className = "pill";
   btn.textContent = "润色中…";
 
-  var news = (_report.data && _report.data.news) || [];
+  var news = (_report.data && (_report.data.focus || _report.data.news)) || [];
   var newsBlock = news.length
     ? news.map(function (it) {
         return "- " + (it.title || "") + "（" + itemSource(it) + "，" + normDate(it.pubDate) + "）";
