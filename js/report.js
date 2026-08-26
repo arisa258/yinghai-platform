@@ -132,7 +132,9 @@ function assembleReportContent(kw, o, data, spec) {
       reportCount: spec.reportCount || 0,
       sourceCount: spec.sourceCount || 0,
       timeSpan: spec.timeSpan || "—",
-      releaseDate: spec.releaseDate || "",
+      releaseDate: spec.releaseDate || (data.film && data.film.releaseDate) || "",
+      filmZh: (data.film && data.film.zh) || kw,
+      filmEn: (data.film && data.film.en) || "",
       narrative: situationTxt
     },
     positives: positives,
@@ -240,6 +242,7 @@ function reportBodyHTML(c) {
 
     '<h2>一、总体情况</h2>' +
     kpis +
+    (c.overview.filmEn ? '<p><b>外文名：</b>' + esc(c.overview.filmEn) + '</p>' : '') +
     (c.overview.releaseDate ? '<p><b>作品上线时间：</b>' + esc(c.overview.releaseDate) + '</p>' : '') +
     '<p><b>舆情类型：</b>' + esc(c.overview.type) + '</p>' +
     tagHTML +
@@ -327,6 +330,7 @@ function reportToMarkdown(c) {
   L.push("- 风险占比：" + c.overview.riskRatio + "%");
   L.push("- 风险等级：" + c.overview.level);
   L.push("- 五维总分：" + c.overview.score + " / 25");
+  if (c.overview.filmEn) L.push("- 外文名：" + c.overview.filmEn);
   if (c.overview.releaseDate) L.push("- 作品上线时间：" + c.overview.releaseDate);
   L.push("- 舆情类型：" + c.overview.type);
   if (c.overview.tags.length) L.push("- 议题标签：" + c.overview.tags.join("、"));
