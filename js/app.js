@@ -15,7 +15,6 @@ function esc(s) {
 var $view = document.getElementById("view");
 var $title = document.getElementById("page-title");
 var $meta = document.getElementById("meta-info");
-var $collectStatus = document.getElementById("collect-status");
 
 var TITLES = {
   "/overview": "总览看板",
@@ -92,22 +91,12 @@ function loadCollect() {
     .then(function (r) { if (!r.ok) throw 0; return r.json(); })
     .then(function (d) {
       collectData = d;
-      setCollectStatus();
       if (getRoute() === "/collect") renderCollect();
     })
     .catch(function () {});
 }
 
 function getCollect() { return collectData || PLATFORM.collect; }
-
-function setCollectStatus() {
-  var c = getCollect();
-  var label = c.status === "online"
-    ? "数据：已采集 " + (c.items ? c.items.length : 0) + " 条"
-    : "数据：实时采集";
-  $collectStatus.textContent = label;
-  $collectStatus.className = "pill " + (c.status === "online" ? "online" : "");
-}
 
 /* ---------- 路由 ---------- */
 function getRoute() {
@@ -723,6 +712,11 @@ function renderAnalyzeResult(box, st, kw, text, data, spec) {
 
   st.textContent = "完成：研判已生成";
   st.className = "pill online";
+
+  /* 研判完成后自动生成「完整报告」（由 report.js 提供） */
+  if (typeof renderReportCard === "function") {
+    renderReportCard(box, kw, o, data, spec);
+  }
 }
 
 /* ---------- 视图 3：处置工具（纯逻辑） ---------- */
@@ -873,7 +867,6 @@ var VIEWS = {
 /* ---------- 初始化 ---------- */
 function init() {
   $meta.textContent = "实时数据 + AI 研判 · " + PLATFORM.meta.version;
-  setCollectStatus();
   loadCollect();
   router();
   window.addEventListener("hashchange", router);

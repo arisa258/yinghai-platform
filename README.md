@@ -23,12 +23,17 @@
 yinghai-platform/
 ├── index.html          平台入口（侧边栏 + 视图）
 ├── css/style.css       样式（纸墨朱砂 · 看板风格）
-├── js/data.js          智库报告真实数据（影片/指标/事件/数据源）
-├── js/app.js           路由与渲染逻辑（6 视图 + SVG 图表）
+├── js/data.js          平台配置（研判维度/监测指标/数据源/处置逻辑）
+├── js/app.js           路由与渲染逻辑（4 视图 + 实时抓取 + AI 研判）
+├── js/report.js        研判后自动生成「深度分析参考报告」（HTML/Word/Markdown 导出）
 ├── data/collect.json   采集脚本产物（真实抓取 / 样例兜底）
 ├── collector.py        数据采集脚本（python collector.py）
 └── README.md           本说明
 ```
+
+## 自动报告
+
+在「研判中心」搜索并分析某部影片后，页面会自动生成该影片的**海外舆情深度分析（参考报告）**，并可直接下载 **HTML 打印版 / Word / Markdown** 三种文件，用于内部参考或随项目材料提交。报告为独立成篇的分析参考，不涉密、不绑定特定体系；未配置 API Key 时仍可用本地组装版完整生成，配置后还可一键「AI 深度润色」。
 
 ## 本地预览
 
