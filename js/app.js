@@ -211,25 +211,7 @@ function fetchNewsFor(kw, limit) {
   var rss = "https://news.google.com/rss/search?q=" + q + "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans";
   return fetch(rss2jsonUrl(rss), { mode: "cors" })
     .then(function (r) { return r.json(); })
-    .then(function (d) {
-      var arr = (d && d.items) || [];
-      arr.forEach(function (it) { if (!it._feed) it._feed = "Google News"; });
-      return arr;
-    })
-    .catch(function () { return []; });
-}
-
-/* 英文 Google News（国际报道源，扩大国际覆盖面；仅当关键词含英文时使用） */
-function fetchNewsForEn(kw, limit) {
-  var q = encodeURIComponent(kw);
-  var rss = "https://news.google.com/rss/search?q=" + q + "&hl=en-US&gl=US&ceid=US:en";
-  return fetch(rss2jsonUrl(rss), { mode: "cors" })
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      var arr = (d && d.items) || [];
-      arr.forEach(function (it) { if (!it._feed) it._feed = "Google News（国际）"; });
-      return arr;
-    })
+    .then(function (d) { return (d && d.items) || []; })
     .catch(function () { return []; });
 }
 
@@ -243,214 +225,90 @@ function filmScore(text) {
   return n;
 }
 
-/* ═══════════ 影片匹配：搜索前先确认影片与外文名 ═══════════ */
-function wikiApi(params) {
-  var qs = Object.keys(params).map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); }).join("&");
-  return fetch("https://zh.wikipedia.org/w/api.php?" + qs + "&format=json&origin=*", { mode: "cors" })
-    .then(function (r) { if (!r.ok) throw 0; return r.json(); });
-}
+/* 广域检索（多关键词 × 多源，扩大搜索量；影视相关性排序） */
+function searchWeb(kw) {
+  var enKw = kw.replace(/[^\x00-\x7F]/g, " ").trim() || kw;
+  var queries = [kw, kw + " 电影 影视 票房", kw + " 动漫 动画", enKw];
+  var seenQ = {}, qs = [];
+  queries.forEach(function (qq) {
+    qq = qq.trim();
+    if (qq && !seenQ[qq]) { seenQ[qq] = 1; qs.push(qq); }
+  });
 
-/* 从维基 infobox 提取上映日期：只在前 120 行信息框区域内找
-   （{{film date|Y|M|D}} 模板 / 信息框字段行的中文日期），避免误取正文日期 */
-function extractFilmDate(text) {
-  if (!text) return "";
-  var head = String(text).split("\n").slice(0, 120).join("\n");
-  var m = head.match(/\{\{(?:film date|film_date)\s*\|(\d{4})\|(\d{1,2})\|(\d{1,2})/i);
-  if (m) return m[1] + "-" + pad2(+m[2]) + "-" + pad2(+m[3]);
-  var fm = head.match(/^\s*[|!]\s*(?:上映时间|上映日期|发行日期|首映|公映|released|date)\s*=\s*([^\n|]*)/im);
-  if (fm) {
-    var dm = fm[1].match(/([12]\d{3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-    if (dm) return dm[1] + "-" + pad2(+dm[2]) + "-" + pad2(+dm[3]);
-  }
-  return "";
-}
+  var newsPromises = qs.map(function (qq) { return fetchNewsFor(qq, 12); });
+  var bingPromise = fetchBingNews(kw);
+  var overseasPromise = fetchOverseas(enKw);
+  var bookUrl = "https://openlibrary.org/search.json?q=" + encodeURIComponent(kw) + "&limit=5";
+  var tvUrl = "https://api.tvmaze.com/search/shows?q=" + encodeURIComponent(enKw) + "&limit=6";
+  var itUrl = "https://itunes.apple.com/search?term=" + encodeURIComponent(enKw) + "&media=movie&entity=tvShow,movie&limit=6";
 
-/* iTunes 兜底：外文名 + 上线时间 */
-function matchFilmViaItunes(kw) {
-  var url = "https://itunes.apple.com/search?term=" + encodeURIComponent(kw) + "&media=movie&entity=movie&limit=3";
-  return fetch(url, { mode: "cors" })
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      var res = (d && d.results) || [];
-      if (!res.length) return null;
-      var r0 = res[0];
-      return { zh: kw, en: r0.trackName || "", releaseDate: normDate(r0.releaseDate) };
-    })
-    .catch(function () { return null; });
-}
-
-/* 标题相关性：去掉括号后缀后判断是否与关键词相关，防止错配到无关词条 */
-function titleRelevant(t, kw) {
-  if (!t) return false;
-  var a = String(t).replace(/[（(].*?[)）]/g, "").trim();
-  var b = String(kw || "").trim();
-  return a === b || (a && b && (a.indexOf(b) >= 0 || b.indexOf(a) >= 0));
-}
-
-/* 自动匹配实际影片：中文维基优先（确认片名 / 外文名 / 中国大陆上线时间），iTunes 兜底 */
-function matchFilm(kw) {
-  function attempt(q) {
-    return wikiApi({ action: "query", list: "search", srsearch: q, srlimit: 5 })
-      .then(function (s) {
-        var hits = (s.query && s.query.search) || [];
-        var best = "";
-        for (var i = 0; i < hits.length; i++) {
-          var t = hits[i].title;
-          if ((t.indexOf("电影") >= 0 || t.indexOf("影片") >= 0 || t.indexOf("(电影)") >= 0) && titleRelevant(t, kw)) { best = t; break; }
-        }
-        if (!best) {
-          for (var j = 0; j < hits.length; j++) {
-            if (titleRelevant(hits[j].title, kw)) { best = hits[j].title; break; }
-          }
-        }
-        if (!best) return null;
-        return wikiApi({ action: "query", prop: "langlinks|revisions", lllang: "en", rvprop: "content", rvslots: "main", titles: best })
-          .then(function (d) {
-            var pages = (d.query && d.query.pages) || {};
-            var page = pages[Object.keys(pages)[0]];
-            if (!page) return null;
-            var en = (page.langlinks && page.langlinks.length) ? page.langlinks[0]["*"] : "";
-            var text = (page.revisions && page.revisions[0] && page.revisions[0].slots && page.revisions[0].slots.main) ? page.revisions[0].slots.main["*"] : "";
-            return { zh: best, en: en, releaseDate: extractFilmDate(text) };
-          });
-      })
-      .catch(function () { return null; });
-  }
-  return attempt(kw).then(function (film) {
-    /* 未确认上映时间时，用「关键词 电影」补搜一次，避免匹配到诗歌/游戏等非影片词条 */
-    if (!film || !film.releaseDate) {
-      return attempt(kw + " 电影").then(function (film2) {
-        if (film2 && film2.releaseDate) return film2;
-        return film || film2 || null;
+  return Promise.all(newsPromises.concat([
+    bingPromise,
+    overseasPromise,
+    fetch(bookUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
+    fetch(tvUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
+    fetch(itUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; })
+  ])).then(function (res) {
+    var n = qs.length;
+    var seen = {}, news = [];
+    for (var i = 0; i < n; i++) {
+      (res[i] || []).forEach(function (it) {
+        var k = (it.title || "") + "|" + (it.link || "");
+        if (!seen[k]) { seen[k] = 1; news.push(it); }
       });
     }
-    return film;
-  }).catch(function () { return matchFilmViaItunes(kw); });
-}
-
-/* 广域检索（多关键词 × 国内+国际多源，扩大搜索量；影视相关性排序）
-   流程：先 matchFilm 确认影片与外文名 → 中文名检索国内源为主体，外文名检索国际源为补充。
-   数据口径：
-   - news/related/broad：关键词直接命中的报道（国内中文源 + 国际英文源）
-   - intl：海外影视源最新全量，作为「国际影视动态」背景参考（与主题可能无关）
-   - focus：规格与报告的数据基准（影视相关优先） */
-function searchWeb(kw) {
-  return matchFilm(kw).then(function (film) {
-    var zhName = film ? film.zh : kw;
-    var enFull = film ? film.en : (kw.replace(/[^\x00-\x7F]/g, " ").trim() || "");
-    /* 查询用外文名：去掉 "(film)" / "（电影）" 后缀 */
-    var enName = (enFull || "").replace(/\s*\(film\)\s*$/i, "").replace(/\s*（电影）\s*$/, "").trim();
-    var hasEn = enName && enName !== zhName;
-
-    var queries = [zhName, zhName + " 电影 影视 票房"];
-    var seenQ = {}, qs = [];
-    queries.forEach(function (qq) {
-      qq = qq.trim();
-      if (qq && !seenQ[qq]) { seenQ[qq] = 1; qs.push(qq); }
+    /* 国内 Bing 新闻源（中文，强相关） */
+    (res[n] || []).forEach(function (it) {
+      var k = (it.title || "") + "|" + (it.link || "");
+      if (!seen[k]) { seen[k] = 1; it._score = 2; news.push(it); }
+    });
+    /* 海外影视源（模糊命中，强相关） */
+    (res[n + 1] || []).forEach(function (it) {
+      var k = (it.title || "") + "|" + (it.link || "");
+      if (!seen[k]) { seen[k] = 1; it._score = 2; news.push(it); }
+    });
+    news.forEach(function (it) {
+      if (it._score === undefined) it._score = filmScore(it.title + " " + (it.description || ""));
+      it._hit = it._hit || 0;
     });
 
-    var newsPromises = qs.map(function (qq) { return fetchNewsFor(qq, 12); });
-    var bingPromise = fetchBingNews(zhName);
-    /* 外文名 → 英文 Google News（国际报道） */
-    var enGNewsPromise = hasEn ? fetchNewsForEn(enName) : Promise.resolve([]);
-    /* 海外影视源最新（带缓存，单次抓取，内部再按外文名拆分「相关/参考」） */
-    var overseasLatestPromise = fetchOverseasCached();
-    var bookUrl = "https://openlibrary.org/search.json?q=" + encodeURIComponent(zhName) + "&limit=5";
-    var tvUrl = "https://api.tvmaze.com/search/shows?q=" + encodeURIComponent(hasEn ? enName : zhName) + "&limit=6";
-    var itUrl = "https://itunes.apple.com/search?term=" + encodeURIComponent(hasEn ? enName : zhName) + "&media=movie&entity=tvShow,movie&limit=6";
-
-    return Promise.all(newsPromises.concat([
-      bingPromise,
-      enGNewsPromise,
-      overseasLatestPromise,
-      fetch(bookUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
-      fetch(tvUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; }),
-      fetch(itUrl, { mode: "cors" }).then(function (r) { return r.json(); }).catch(function () { return null; })
-    ])).then(function (res) {
-      var n = qs.length;
-      var seen = {}, news = [], intl = [], seenIntl = {};
-      /* 中文 Google News（国内报道 · 主体） */
-      for (var i = 0; i < n; i++) {
-        (res[i] || []).forEach(function (it) {
-          var k = (it.title || "") + "|" + (it.link || "");
-          if (!seen[k]) { seen[k] = 1; it._cn = true; news.push(it); }
-        });
-      }
-      /* 国内 Bing 新闻源（中文，强相关） */
-      (res[n] || []).forEach(function (it) {
-        var k = (it.title || "") + "|" + (it.link || "");
-        if (!seen[k]) { seen[k] = 1; it._cn = true; it._score = 2; news.push(it); }
-      });
-      /* 英文 Google News（外文名国际报道，强相关） */
-      (res[n + 1] || []).forEach(function (it) {
-        var k = (it.title || "") + "|" + (it.link || "");
-        if (!seen[k]) { seen[k] = 1; it._score = 2; news.push(it); }
-      });
-      /* 海外影视源：按外文名命中者为相关报道，其余为国际动态参考 */
-      var ovTokens = hasEn ? fuzzyTokens(enName) : [];
-      (res[n + 2] || []).forEach(function (it) {
-        if (ovTokens.length && fuzzyHit((it.title || "") + " " + (it.description || ""), ovTokens) > 0) {
-          var k = (it.title || "") + "|" + (it.link || "");
-          if (!seen[k]) { seen[k] = 1; it._score = 2; news.push(it); }
-        } else {
-          var k2 = (it.title || "") + "|" + (it.link || "");
-          if (!seenIntl[k2]) { seenIntl[k2] = 1; it._intl = true; it._score = 0; intl.push(it); }
-        }
-      });
-      news.forEach(function (it) {
-        if (it._score === undefined) it._score = filmScore(it.title + " " + (it.description || ""));
-        it._hit = it._hit || 0;
-      });
-
-      /* 国内报道优先，其次相关度 */
+    function finalize() {
       news.sort(function (a, b) {
-        if (a._cn !== b._cn) return a._cn ? -1 : 1;
         if (b._score !== a._score) return b._score - a._score;
         return (b._hit || 0) - (a._hit || 0);
       });
-      var related = news.filter(function (it) { return it._score >= 1; });
-      var broad = news.filter(function (it) { return it._score === 0; });
-
-      /* 上线时间：影片匹配（维基/iTunes）优先，其次 iTunes/TVMaze 元数据 */
-      var releaseDate = film && film.releaseDate ? film.releaseDate : "";
-      if (!releaseDate) {
-        var itRes = (res[n + 5] && res[n + 5].results) || [];
-        for (var a = 0; a < itRes.length; a++) {
-          var rd = normDate(itRes[a].releaseDate);
-          if (rd) { releaseDate = rd; break; }
-        }
-      }
-      if (!releaseDate) {
-        var tvRes = (res[n + 4] && res[n + 4].length) ? res[n + 4] : [];
-        for (var b = 0; b < tvRes.length; b++) {
-          var pd = tvRes[b].show ? normDate(tvRes[b].show.premiered) : "";
-          if (pd) { releaseDate = pd; break; }
-        }
-      }
-
       return {
         news: news,
-        related: related,
-        broad: broad,
-        intl: intl.slice(0, 15),
-        focus: (related.length ? related : news),
-        film: film || { zh: zhName, en: enFull || "", releaseDate: releaseDate },
-        releaseDate: releaseDate,
-        books: (res[n + 3] && res[n + 3].docs) || [],
-        tvs: (res[n + 4] && res[n + 4].length) ? res[n + 4] : [],
-        itunes: (res[n + 5] && res[n + 5].results) || []
+        related: news.filter(function (it) { return it._score >= 1; }),
+        broad: news.filter(function (it) { return it._score === 0; }),
+        books: (res[n + 2] && res[n + 2].docs) || [],
+        tvs: (res[n + 3] && res[n + 3].length) ? res[n + 3] : [],
+        itunes: (res[n + 4] && res[n + 4].results) || []
       };
-    });
+    }
+
+    /* 防 0：完全无新闻时回退海外源全量最新 */
+    if (!news.length) {
+      return fetchOverseas("").then(function (all) {
+        all.forEach(function (it) {
+          var k = (it.title || "") + "|" + (it.link || "");
+          if (!seen[k]) { seen[k] = 1; it._score = 1; it._fallback = true; news.push(it); }
+        });
+        return finalize();
+      });
+    }
+    return finalize();
   });
 }
+
 
 function renderNewsItems(list, limit) {
   var items = (list || []).slice(0, limit || 10);
   if (!items.length) return '<div class="empty">未检索到影视相关新闻</div>';
   return items.map(function (it) {
-    var srcName = itemSource(it);
+    var srcName = it._src || (it.source && it.source.name) || "";
     var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
-    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc(normDate(it.pubDate)) + ' · ' + esc(srcName) + ')</span>' + link + '</div>';
+    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc(srcName) + ')</span>' + link + '</div>';
   }).join("");
 }
 
@@ -460,11 +318,7 @@ function fetchBingNews(kw, limit) {
   var rss = "https://www.bing.com/news/search?q=" + q + "&format=rss";
   return fetch(rss2jsonUrl(rss), { mode: "cors" })
     .then(function (r) { return r.json(); })
-    .then(function (d) {
-      var arr = (d && d.items) || [];
-      arr.forEach(function (it) { if (!it._feed) it._feed = "Bing 新闻"; });
-      return arr;
-    })
+    .then(function (d) { return (d && d.items) || []; })
     .catch(function () { return []; });
 }
 
@@ -525,18 +379,6 @@ function fetchOverseas(term) {
   });
 }
 
-/* 海外源最新动态带 30 分钟本地缓存：避免每次搜索都打 8 个请求挤占 rss2json 配额（国内源因此更稳） */
-var INTL_CACHE_KEY = "yinghai_intl_cache";
-function fetchOverseasCached() {
-  try {
-    var c = JSON.parse(localStorage.getItem(INTL_CACHE_KEY) || "null");
-    if (c && c.items && c.ts && (Date.now() - c.ts) < 30 * 60 * 1000) return Promise.resolve(c.items);
-  } catch (e) {}
-  return fetchOverseas("").then(function (items) {
-    try { localStorage.setItem(INTL_CACHE_KEY, JSON.stringify({ ts: Date.now(), items: items })); } catch (e) {}
-    return items;
-  });
-}
 
 /* 来源识别：rss2json 多数源不带 source 字段，需回退到 author / 数据源标签 */
 function itemSource(it) {
@@ -549,12 +391,6 @@ function itemSource(it) {
 }
 
 function pad2(n) { return ("0" + n).slice(-2); }
-
-/* 今天（YYYY-MM-DD，本地日期） */
-function todayStr() {
-  var d = new Date();
-  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
-}
 
 /* 稳健日期 → YYYY-MM-DD（兼容 ISO / 空格 / RFC822 等格式） */
 function normDate(pubDate) {
@@ -569,45 +405,22 @@ function normDate(pubDate) {
   return "";
 }
 
-/* 新闻数据规格化；opts.releaseDate 为作品上线时间，时间跨度取「上线至今」 */
-function normalizeNews(news, opts) {
-  opts = opts || {};
+/* 新闻数据规格化 */
+function normalizeNews(news) {
   var srcCount = {}, byDate = {};
   news.forEach(function (it) {
-    var s = itemSource(it);
+    var s = (it.source && it.source.name) || "未知来源";
     srcCount[s] = (srcCount[s] || 0) + 1;
-    var d = normDate(it.pubDate);
+    var d = (it.pubDate || "").slice(0, 10);
     if (d) byDate[d] = (byDate[d] || 0) + 1;
   });
   var dist = Object.keys(srcCount).sort(function (a, b) { return srcCount[b] - srcCount[a]; })
     .slice(0, 5).map(function (s) { return { name: s, count: srcCount[s] }; });
   var dates = Object.keys(byDate).sort();
-  var today = todayStr();
-
-  /* 起点：优先作品上线时间；异常值（未来 / 早于2年前）回退到最早相关报道 */
-  var start = "";
-  var rel = normDate(opts.releaseDate);
-  var earliest = dates.length ? dates[0] : "";
-  if (rel) {
-    var relT = new Date(rel.replace(/-/g, "/")).getTime();
-    var todayT = new Date(today.replace(/-/g, "/")).getTime();
-    var maxBack = new Date(today.replace(/-/g, "/"));
-    maxBack.setFullYear(maxBack.getFullYear() - 2);
-    if (!isNaN(relT) && relT <= todayT && relT >= maxBack.getTime()) start = rel;
-  }
-  if (!start) start = earliest;
-
-  /* 终点：至今；未上映 / 无数据时退回报道窗口 */
-  var end = today;
-  if (!start || start > end) {
-    start = earliest;
-    end = dates.length ? dates[dates.length - 1] : today;
-  }
   return {
     reportCount: news.length,
     sourceCount: Object.keys(srcCount).length,
-    releaseDate: rel || "",
-    timeSpan: (start && end) ? (start + " 至 " + end) : "—",
+    timeSpan: dates.length ? (dates[0] + " 至 " + dates[dates.length - 1]) : "—",
     sourceDist: dist,
     dateDist: dates.slice(-7).map(function (d) { return { date: d, count: byDate[d] }; })
   };
@@ -722,7 +535,7 @@ function newsListBlock(news) {
   if (!news || !news.length) return '<div class="card" style="margin-top:16px"><div class="empty">未抓取到实时新闻。</div></div>';
   var items = news.slice(0, 8).map(function (it) {
     var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
-    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc(normDate(it.pubDate)) + ' · ' + esc(itemSource(it)) + ')</span>' + link + '</div>';
+    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc((it.source && it.source.name) || "") + ')</span>' + link + '</div>';
   }).join("");
   return '<div class="section-title">实时相关动态</div><div class="card">' + items + '</div>';
 }
@@ -761,29 +574,19 @@ function analyzeWork(kw) {
   var box = document.getElementById("az-result");
   var st = document.getElementById("az-status");
   if (!kw) { box.innerHTML = '<div class="empty">请输入作品或主题。</div>'; return; }
-  st.textContent = "① 匹配影片并联网抓取中…";
+  st.textContent = "① 广域联网抓取中…";
   st.className = "pill";
-  box.innerHTML = '<div class="empty">正在匹配影片「' + esc(kw) + '」并广域检索（国内源为主体 + 外文名国际检索）…</div>';
+  box.innerHTML = '<div class="empty">正在广域检索「' + esc(kw) + '」并构建数据规格…</div>';
 
   searchWeb(kw).then(function (data) {
     st.textContent = "② AI 研判中…";
-    var spec = normalizeNews(data.focus, { releaseDate: data.releaseDate });
-    var focus = data.focus || [];
-    var newsBlock = focus.length
-      ? focus.map(function (it) {
-          return "- " + (it.title || "") + "（" + itemSource(it) + "，" + normDate(it.pubDate) + "）";
+    var spec = normalizeNews(data.news);
+    var newsBlock = data.news.length
+      ? data.news.map(function (it) {
+          return "- " + (it.title || "") + "（" + ((it.source && it.source.name) || "") + "，" + (it.pubDate || "").slice(0, 10) + "）" + (it._score >= 1 ? " ✓影视相关" : " ○疑似泛化");
         }).join("\n")
-      : "（未检索到直接相关的报道）";
-    var intlBlock = (data.intl && data.intl.length)
-      ? "\n\n--- 国际影视动态（海外主流影视媒体最新，可能与研究对象无直接关联，仅作国际背景参考）---\n" +
-        data.intl.slice(0, 5).map(function (it) {
-          return "- " + (it.title || "") + "（" + itemSource(it) + "，" + normDate(it.pubDate) + "）";
-        }).join("\n")
-      : "";
+      : "（未抓到实时新闻）";
 
-    var filmInfo = data.film
-      ? "中文名《" + (data.film.zh || kw) + "》" + (data.film.en ? "，外文名 " + data.film.en : "") + (data.film.releaseDate ? "，中国大陆上线时间 " + data.film.releaseDate : "")
-      : "未匹配到具体影片条目";
     var prompt = [
       "你是「映海御安阁」中国电影海外舆情与文化安全研判平台的分析引擎。",
       "请对「" + kw + "」进行舆情研判，**只输出一个 JSON 对象**（不要 markdown 代码块），字段：",
@@ -813,13 +616,11 @@ function analyzeWork(kw) {
       "- 四类主导舆情：文化认同与政策型 / 邻国形象与刻板印象型 / 事实伦理与制度型 / 专业工艺与类型片型",
       "- 八大监测指标（alerts 请根据资料判断哪些已触发）：议题迁移、主体升级、跨语言扩散、标签固化、现实转化、回应接受度、服务损害、合作方风险",
       "- RACI 决策：A=最终拍板 R=直接执行 C=必须会签 I=知会",
-      "已匹配影片：" + filmInfo + "。",
-      "实时抓取到的与「" + kw + "」直接相关的新闻资料：",
+      "实时抓取到的新闻资料（标注 ○疑似泛化 的条目多为同名无关内容，请忽略，只基于影视相关内容研判）：",
       "---",
       newsBlock,
-      "---" + intlBlock,
-      "",
-      "请基于以上资料给出客观、量化的研判；国际影视动态仅作背景参考，不要当作该作品本身的舆情。"
+      "---",
+      "请基于以上资料给出客观、量化的研判。"
     ].join("\n");
 
     callLLM([{ role: "user", content: prompt }]).then(function (text) {
@@ -833,34 +634,11 @@ function analyzeWork(kw) {
     });
   });
 }
-
-/* 影片匹配卡片（搜索前用中文维基/iTunes 确认片名、外文名、上线时间） */
-function filmMatchCard(film) {
-  if (!film || !film.zh) return "";
-  var en = film.en ? "　外文名：<b>" + esc(film.en) + "</b>" : "";
-  var rel = film.releaseDate ? "　中国大陆上线：<b>" + esc(film.releaseDate) + "</b>" : "";
-  var src = film.en || film.releaseDate ? '<span style="color:#8A837A">（经中文维基/iTunes 匹配确认）</span>' : "";
-  return '<div class="card" style="border-left:3px solid var(--gold)">' +
-    '<div class="report-title" style="margin-bottom:4px">影片匹配</div>' +
-    '<p style="font-size:13px;color:#5C5750">已自动匹配影片：<b>' + esc(film.zh) + '</b>' + en + rel + ' ' + src + '</p>' +
-    '</div>';
-}
-
-/* 国际影视动态（海外源最新，背景参考，非主题相关） */
-function intlSection(list) {
-  if (!list || !list.length) return "";
-  return '<div class="section-title">国际影视动态（最新 · 供参考）</div>' +
-    '<div class="card"><p style="font-size:12px;color:#8A837A;margin-bottom:6px">以下为海外主流影视媒体的最新动态，作为国际背景参考，可能与研究对象无直接关联。</p>' +
-    renderNewsItems(list, 5) + '</div>';
-}
-
 function analyzeRawBlock(data, spec) {
-  return filmMatchCard(data.film) +
-    specBlock(spec) +
+  return specBlock(spec) +
     '<div class="section-title">实时检索结果（影视相关优先）</div>' +
     '<div class="card">' + renderNewsItems(data.related, 10) +
-    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（已过滤展示）</div>' : '') + '</div>' +
-    intlSection(data.intl);
+    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（已过滤展示）</div>' : '') + '</div>';
 }
 
 function specBlock(spec) {
@@ -874,7 +652,7 @@ function specBlock(spec) {
     '<div class="grid grid-4" style="margin-bottom:12px">' +
     '<div class="kpi-card"><span class="num">' + spec.reportCount + '</span><span class="lab">实时报道数</span></div>' +
     '<div class="kpi-card"><span class="num">' + spec.sourceCount + '</span><span class="lab">来源数</span></div>' +
-    '<div class="kpi-card"><span class="num" style="font-size:15px">' + esc(spec.timeSpan) + '</span><span class="lab">时间跨度</span></div>' +
+    '<div class="kpi-card"><span class="num" style="font-size:22px">' + esc(spec.timeSpan) + '</span><span class="lab">时间跨度</span></div>' +
     '<div class="kpi-card"><span class="num">' + (spec.dateDist || []).length + '</span><span class="lab">近端天数</span></div>' +
     '</div>' +
     '<div class="card" style="margin-bottom:12px"><h4>来源分布（Top）</h4>' + (dist || '<div class="empty">无</div>') + '</div>';
@@ -931,7 +709,6 @@ function renderAnalyzeResult(box, st, kw, text, data, spec) {
   var advice = (o.advice || []).map(function (a, i) { return '<li><b>0' + (i + 1) + '</b>　' + esc(a) + '</li>'; }).join("");
 
   box.innerHTML =
-    filmMatchCard(data.film) +
     '<div class="grid grid-4" style="margin-bottom:16px">' +
     '<div class="kpi-card"><span class="num">' + (o.heat || 0) + '</span><span class="lab">舆情热度</span></div>' +
     '<div class="kpi-card"><span class="num">' + (o.posRatio || 0) + '%</span><span class="lab">正面 / 专业</span></div>' +
@@ -957,9 +734,7 @@ function renderAnalyzeResult(box, st, kw, text, data, spec) {
 
     '<div class="section-title">实时检索结果（影视相关优先）</div>' +
     '<div class="card">' + renderNewsItems(data.related, 10) +
-    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（与影视无关，已过滤展示）</div>' : '') + '</div>' +
-
-    intlSection(data.intl);
+    (data.broad && data.broad.length ? '<div class="empty" style="padding-top:8px">另有 ' + data.broad.length + ' 条疑似泛化结果（与影视无关，已过滤展示）</div>' : '') + '</div>';
 
   st.textContent = "完成：研判已生成";
   st.className = "pill online";

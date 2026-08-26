@@ -45,9 +45,6 @@ var PLATFORM = {
     { name: "BBC · 娱乐与文化", rss: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml" },
     { name: "Variety", rss: "https://variety.com/feed/" },
     { name: "Hollywood Reporter", rss: "https://www.hollywoodreporter.com/feed/" },
-    { name: "Deadline", rss: "https://deadline.com/feed/" },
-    { name: "TheWrap", rss: "https://www.thewrap.com/feed/" },
-    { name: "CNA · 娱乐", rss: "https://www.channelnewsasia.com/rssfeeds/topic/entertainment" },
     { name: "IGN", rss: "https://feeds.ign.com/ign/games-all" }
   ],
 
@@ -59,9 +56,6 @@ var PLATFORM = {
     { name: "BBC · 娱乐与文化", region: "英国", type: "海外主流媒体", reach: "rss2json 中转" },
     { name: "Variety", region: "美国", type: "海外行业媒体", reach: "rss2json 中转" },
     { name: "Hollywood Reporter", region: "美国", type: "海外行业媒体", reach: "rss2json 中转" },
-    { name: "Deadline", region: "美国", type: "海外行业媒体", reach: "rss2json 中转" },
-    { name: "TheWrap", region: "美国", type: "海外行业媒体", reach: "rss2json 中转" },
-    { name: "CNA · 娱乐", region: "新加坡", type: "亚太主流媒体", reach: "rss2json 中转" },
     { name: "IGN", region: "美国", type: "影视游戏媒体", reach: "rss2json 中转" },
     { name: "Open Library", region: "全球", type: "图书百科", reach: "可直连" },
     { name: "TVMaze", region: "全球", type: "影视档案", reach: "可直连" },
