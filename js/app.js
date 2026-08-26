@@ -211,7 +211,11 @@ function fetchNewsFor(kw, limit) {
   var rss = "https://news.google.com/rss/search?q=" + q + "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans";
   return fetch(rss2jsonUrl(rss), { mode: "cors" })
     .then(function (r) { return r.json(); })
-    .then(function (d) { return (d && d.items) || []; })
+    .then(function (d) {
+      var arr = (d && d.items) || [];
+      arr.forEach(function (it) { if (!it._feed) it._feed = "Google News"; });
+      return arr;
+    })
     .catch(function () { return []; });
 }
 
@@ -305,9 +309,9 @@ function renderNewsItems(list, limit) {
   var items = (list || []).slice(0, limit || 10);
   if (!items.length) return '<div class="empty">未检索到影视相关新闻</div>';
   return items.map(function (it) {
-    var srcName = it._src || (it.source && it.source.name) || "";
+    var srcName = itemSource(it);
     var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
-    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc(srcName) + ')</span>' + link + '</div>';
+    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc(normDate(it.pubDate)) + ' · ' + esc(srcName) + ')</span>' + link + '</div>';
   }).join("");
 }
 
@@ -317,7 +321,11 @@ function fetchBingNews(kw, limit) {
   var rss = "https://www.bing.com/news/search?q=" + q + "&format=rss";
   return fetch(rss2jsonUrl(rss), { mode: "cors" })
     .then(function (r) { return r.json(); })
-    .then(function (d) { return (d && d.items) || []; })
+    .then(function (d) {
+      var arr = (d && d.items) || [];
+      arr.forEach(function (it) { if (!it._feed) it._feed = "Bing 新闻"; });
+      return arr;
+    })
     .catch(function () { return []; });
 }
 
@@ -378,24 +386,58 @@ function fetchOverseas(term) {
   });
 }
 
+/* 来源识别：rss2json 多数源不带 source 字段，需回退到 author / 数据源标签 */
+function itemSource(it) {
+  if (it._src) return it._src;
+  if (it.source && it.source.name) return it.source.name;
+  var a = String(it.author || "").trim();
+  if (a) return a;
+  if (it._feed) return it._feed;
+  return "未知来源";
+}
+
+function pad2(n) { return ("0" + n).slice(-2); }
+
+/* 稳健日期 → YYYY-MM-DD（兼容 ISO / 空格 / RFC822 等格式） */
+function normDate(pubDate) {
+  var s = String(pubDate || "").trim();
+  if (!s) return "";
+  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + "-" + pad2(+m[2]) + "-" + pad2(+m[3]);
+  var d = new Date(s);
+  if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+  return "";
+}
+
 /* 新闻数据规格化 */
 function normalizeNews(news) {
   var srcCount = {}, byDate = {};
   news.forEach(function (it) {
-    var s = (it.source && it.source.name) || "未知来源";
+    var s = itemSource(it);
     srcCount[s] = (srcCount[s] || 0) + 1;
-    var d = (it.pubDate || "").slice(0, 10);
+    var d = normDate(it.pubDate);
     if (d) byDate[d] = (byDate[d] || 0) + 1;
   });
   var dist = Object.keys(srcCount).sort(function (a, b) { return srcCount[b] - srcCount[a]; })
     .slice(0, 5).map(function (s) { return { name: s, count: srcCount[s] }; });
   var dates = Object.keys(byDate).sort();
+  /* 收窄到最近 30 天窗口，避免搜索源混入陈旧条目导致「时间跨度」失真 */
+  var maxDate = dates.length ? dates[dates.length - 1] : "";
+  var winStart = "";
+  if (maxDate) {
+    var md = new Date(maxDate.replace(/-/g, "/"));
+    md.setDate(md.getDate() - 30);
+    winStart = md.getFullYear() + "-" + pad2(md.getMonth() + 1) + "-" + pad2(md.getDate());
+  }
+  var winDates = dates.filter(function (d) { return !winStart || d >= winStart; });
   return {
     reportCount: news.length,
     sourceCount: Object.keys(srcCount).length,
-    timeSpan: dates.length ? (dates[0] + " 至 " + dates[dates.length - 1]) : "—",
+    timeSpan: winDates.length ? (winDates[0] + " 至 " + winDates[winDates.length - 1]) : (dates.length ? (dates[0] + " 至 " + dates[dates.length - 1]) : "—"),
     sourceDist: dist,
-    dateDist: dates.slice(-7).map(function (d) { return { date: d, count: byDate[d] }; })
+    dateDist: winDates.slice(-7).map(function (d) { return { date: d, count: byDate[d] }; })
   };
 }
 
@@ -440,7 +482,7 @@ function overviewAnalyze(topic) {
     });
     st.textContent = "② 大模型分析中…";
     var newsBlock = news.length
-      ? news.map(function (it) { return "- " + (it.title || "") + "（" + ((it.source && it.source.name) || "") + "，" + (it.pubDate || "").slice(0, 10) + "）"; }).join("\n")
+      ? news.map(function (it) { return "- " + (it.title || "") + "（" + itemSource(it) + "，" + normDate(it.pubDate) + "）"; }).join("\n")
       : "（未能联网抓取到实时新闻，请基于公开信息给出框架性分析）";
     var prompt = [
       "你是「映海御安阁」中国电影海外舆情与文化安全研判平台的分析引擎，专注于国内影视产业与舆情研判。",
@@ -508,7 +550,7 @@ function newsListBlock(news) {
   if (!news || !news.length) return '<div class="card" style="margin-top:16px"><div class="empty">未抓取到实时新闻。</div></div>';
   var items = news.slice(0, 8).map(function (it) {
     var link = it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener" style="color:#274A64">原文 ↗</a>' : "";
-    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc((it.pubDate || "").slice(0, 10)) + ' · ' + esc((it.source && it.source.name) || "") + ')</span>' + link + '</div>';
+    return '<div class="item-line"><span class="light green"></span><b>' + esc(it.title) + '</b> <span style="color:#8A837A">(' + esc(normDate(it.pubDate)) + ' · ' + esc(itemSource(it)) + ')</span>' + link + '</div>';
   }).join("");
   return '<div class="section-title">实时相关动态</div><div class="card">' + items + '</div>';
 }
@@ -556,7 +598,7 @@ function analyzeWork(kw) {
     var spec = normalizeNews(data.news);
     var newsBlock = data.news.length
       ? data.news.map(function (it) {
-          return "- " + (it.title || "") + "（" + ((it.source && it.source.name) || "") + "，" + (it.pubDate || "").slice(0, 10) + "）" + (it._score >= 1 ? " ✓影视相关" : " ○疑似泛化");
+          return "- " + (it.title || "") + "（" + itemSource(it) + "，" + normDate(it.pubDate) + "）" + (it._score >= 1 ? " ✓影视相关" : " ○疑似泛化");
         }).join("\n")
       : "（未抓到实时新闻）";
 
@@ -626,7 +668,7 @@ function specBlock(spec) {
     '<div class="grid grid-4" style="margin-bottom:12px">' +
     '<div class="kpi-card"><span class="num">' + spec.reportCount + '</span><span class="lab">实时报道数</span></div>' +
     '<div class="kpi-card"><span class="num">' + spec.sourceCount + '</span><span class="lab">来源数</span></div>' +
-    '<div class="kpi-card"><span class="num" style="font-size:22px">' + esc(spec.timeSpan) + '</span><span class="lab">时间跨度</span></div>' +
+    '<div class="kpi-card"><span class="num" style="font-size:15px">' + esc(spec.timeSpan) + '</span><span class="lab">时间跨度</span></div>' +
     '<div class="kpi-card"><span class="num">' + (spec.dateDist || []).length + '</span><span class="lab">近端天数</span></div>' +
     '</div>' +
     '<div class="card" style="margin-bottom:12px"><h4>来源分布（Top）</h4>' + (dist || '<div class="empty">无</div>') + '</div>';

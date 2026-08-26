@@ -99,8 +99,8 @@ function assembleReportContent(kw, o, data, spec) {
   function toRef(it) {
     return {
       title: it.title || "（无标题）",
-      src: it._src || (it.source && it.source.name) || "未知来源",
-      date: (it.pubDate || "").slice(0, 10) || "",
+      src: itemSource(it),
+      date: normDate(it.pubDate) || "",
       link: it.link || ""
     };
   }
@@ -387,7 +387,7 @@ function enhanceReport() {
   var news = (_report.data && _report.data.news) || [];
   var newsBlock = news.length
     ? news.map(function (it) {
-        return "- " + (it.title || "") + "（" + ((it.source && it.source.name) || "") + "，" + (it.pubDate || "").slice(0, 10) + "）";
+        return "- " + (it.title || "") + "（" + itemSource(it) + "，" + normDate(it.pubDate) + "）";
       }).join("\n")
     : "（未抓到实时新闻）";
 
